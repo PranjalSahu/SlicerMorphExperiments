@@ -155,8 +155,32 @@ movingMesh = itk.meshread('/home/pranjal.sahu/Downloads/129S1_SVIMJ_.vtk')
 fixedPS = PointSetType.New()
 movingPS = PointSetType.New()
 
-fixedPS.SetPoints(fixedMesh.GetPoints())
-movingPS.SetPoints(movingMesh.GetPoints())
+randomMovingPS = itk.array_from_vector_container(movingMesh.GetPoints())
+randomFixedPS = itk.array_from_vector_container(fixedMesh.GetPoints())
+
+index = np.random.choice(movingMesh.GetNumberOfPoints(), 5000)
+randomMovingPS = np.take(randomMovingPS, index, 0)
+
+index = np.random.choice(fixedMesh.GetNumberOfPoints(), 5000)
+randomFixedPS = np.take(randomFixedPS, index, 0)
+
+
+p1 = itk.VectorContainer.ULPF3.New()
+p2 = itk.VectorContainer.ULPF3.New()
+
+
+for i in range(5000):
+    p1.InsertElement(i, randomMovingPS[i].astype('float'))
+    p2.InsertElement(i, randomFixedPS[i].astype('float'))
+
+#fixedPS.SetPoints(fixedMesh.GetPoints())
+#movingPS.SetPoints(movingMesh.GetPoints())
+
+#fixedPS.SetPoints(itk.vector_container_from_array(randomFixedPS))
+#movingPS.SetPoints(itk.vector_container_from_array(randomMovingPS))
+movingPS.SetPoints(p1)
+fixedPS.SetPoints(p2)
+
 
 print(fixedMesh.GetNumberOfPoints(), movingMesh.GetNumberOfPoints())
 print(fixedPS.GetNumberOfPoints(), movingPS.GetNumberOfPoints())
@@ -183,11 +207,11 @@ metric.Initialize()
 
 print('Init Done')
 
-numberOfIterations = 10
+numberOfIterations = 100
 gradientTolerance  = 1e-5
 valueTolerance     = 1e-5   
 epsilonFunction    = 1e-6
-learningRate       = 0.01
+learningRate       = 0.001
 
 #optimizer.SetScales(scales)
 optimizer.SetNumberOfIterations(numberOfIterations)
@@ -217,9 +241,9 @@ print('-------------------------------------------')
 
 
 
-numberOfPoints = movingPS.GetNumberOfPoints()
+numberOfPoints = movingMesh.GetNumberOfPoints()
 for i in range(0, numberOfPoints):
-    movingMesh.SetPoint(i, transform.TransformPoint(movingPS.GetPoint(i)))
+    movingMesh.SetPoint(i, transform.TransformPoint(movingMesh.GetPoint(i)))
 
 
 itk.meshwrite(movingMesh, 'movingMesh_transformed.vtk')
