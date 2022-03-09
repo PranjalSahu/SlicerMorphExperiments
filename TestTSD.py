@@ -214,3 +214,12 @@ print('-------------------------------------------')
 print('Transform Parameters after Optimization')
 print(np.array(transform.GetParameters()))
 print('-------------------------------------------')
+
+
+
+numberOfPoints = movingPS.GetNumberOfPoints()
+for i in range(0, numberOfPoints):
+    movingMesh.SetPoint(i, transform.TransformPoint(movingPS.GetPoint(i)))
+
+
+itk.meshwrite(movingMesh, 'movingMesh_transformed.vtk')
