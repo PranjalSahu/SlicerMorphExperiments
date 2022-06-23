@@ -137,14 +137,19 @@ for path in paths:
 
     vtk_mesh = reader.GetOutput()
 
-    # Get largest connected component
+    # Get largest connected component and clean the mesh to remove un-used points
     connectivityFilter = vtk.vtkPolyDataConnectivityFilter()
     connectivityFilter.SetInputData(vtk_mesh)
     connectivityFilter.SetExtractionModeToLargestRegion()
     connectivityFilter.Update()
-    vtk_mesh = connectivityFilter.GetOutput()
+    vtk_mesh_out = connectivityFilter.GetOutput()
 
-    vtk_meshes.append(vtk_mesh)
+    filter1 = vtk.vtkCleanPolyData()
+    filter1.SetInputData(vtk_mesh_out)
+    filter1.Update()
+    vtk_mesh_out_clean = filter1.GetOutput()
+
+    vtk_meshes.append(vtk_mesh_out_clean)
 
 # Scale mesh before doing moment based initialization
 box_filter = vtk.vtkBoundingBox()
