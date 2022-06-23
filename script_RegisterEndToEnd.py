@@ -96,7 +96,7 @@ FIXED_LANDMARK_FILE = sys.argv[2]
 MOVING_MESH_FILE = sys.argv[3]
 MOVING_LANDMARK_FILE = sys.argv[4]
 
-casename = FIXED_MESH_FILE.split("/")[-1].split("-")[0]
+casename = FIXED_MESH_FILE.split("/")[-1].split(".")[0]
 paths = [FIXED_MESH_FILE, MOVING_MESH_FILE]
 
 
@@ -126,6 +126,14 @@ for path in paths:
     reader.Update()
 
     vtk_mesh = reader.GetOutput()
+
+    # Get largest connected component
+    connectivityFilter = vtk.vtkPolyDataConnectivityFilter()
+    connectivityFilter.SetInputData(vtk_mesh)
+    connectivityFilter.SetExtractionModeToLargestRegion()
+    connectivityFilter.Update()
+    vtk_mesh = connectivityFilter.GetOutput()
+
     vtk_meshes.append(vtk_mesh)
 
 # Write back out to a filetype supported by ITK
@@ -453,7 +461,7 @@ print("Starting Ransac")
 import time
 
 number_of_iterations = 10000
-number_of_ransac_points = 100
+number_of_ransac_points = 250
 mesh_sub_sample_points = 5000
 convergence_value = 3
 transform_type = 0
@@ -461,28 +469,32 @@ transform_type = 0
 movingMeshPath = "movingMesh.vtk"
 fixedMeshPath = "fixedMesh.vtk"
 
-movingMesh = readvtk(movingMeshPath)
-fixedMesh = readvtk(fixedMeshPath)
+movingMesh_vtk = readvtk(movingMeshPath)
+fixedMesh_vtk = readvtk(fixedMeshPath)
 
-movingMeshAllPoints = numpy_support.vtk_to_numpy(movingMesh.GetPoints().GetData())
+movingMeshAllPoints = numpy_support.vtk_to_numpy(movingMesh_vtk.GetPoints().GetData())
 
-# Sub-Sample the points
-movingMeshPoints = subsample_points_poisson(movingMesh, radius=5.5)
-fixedMeshPoints = subsample_points_poisson(fixedMesh, radius=5.5)
+# Sub-Sample the points for rigid refinement and deformable registration
+movingMeshPoints = subsample_points_poisson(movingMesh_vtk, radius=5.5)
+fixedMeshPoints = subsample_points_poisson(fixedMesh_vtk, radius=5.5)
 
-# Sub-Sample the points
-movingMeshPoints_ransac = subsample_points_poisson(movingMesh, radius=11.5)
-fixedMeshPoints_ransac = subsample_points_poisson(fixedMesh, radius=11.5)
+# Sub-Sample the points for ransac
+movingMeshPoints_ransac = subsample_points_poisson(movingMesh_vtk, radius=11.5)
+fixedMeshPoints_ransac = subsample_points_poisson(fixedMesh_vtk, radius=11.5)
 
 print(movingMeshPoints.shape, fixedMeshPoints.shape)
 print(movingMeshPoints_ransac.shape, fixedMeshPoints_ransac.shape)
 
-movingMesh = itk.meshread(movingMeshPath, itk.D)
-fixedMesh = itk.meshread(fixedMeshPath, itk.D)
 
 movingMeshPoints, scaledMovingMesh, scale_factor = perform_scaling_and_centering(
     movingMeshPoints, fixedMeshPoints, movingMesh, fixedMesh
 )
+
+w1 = itk.MeshFileWriter[type(scaledMovingMesh)].New()
+w1.SetFileName("movingMesh_scaled.vtk")
+w1.SetFileTypeAsBINARY()
+w1.SetInput(scaledMovingMesh)
+w1.Update()
 
 # Scale the points to be used for ransac
 movingMeshPoints_ransac = movingMeshPoints_ransac*scale_factor
