@@ -599,6 +599,9 @@ final_mesh_points, second_transform = final_iteration(
     fixedMeshPoints, itk_transformed_points, transform_type
 )
 
+np.save('fixedMeshPoints.npy', fixedMeshPoints)
+np.save('final_mesh_points.npy', final_mesh_points)
+
 # Write the sub-sampled moving mesh points
 rigidRegisteredPoints = itk.Mesh.D3.New()
 rigidRegisteredPoints.SetPoints(itk.vector_container_from_array(final_mesh_points.flatten()))
@@ -624,7 +627,7 @@ w1.Update()
 
 print("Completed Rigid Refinement")
 
-exit(0)
+#exit(0)
 # In[112]:
 
 
@@ -644,7 +647,7 @@ FixedImageType = itk.Image[PixelType, Dimension]
 movingPS = itk.PointSet[itk.D, Dimension].New()
 fixedPS = itk.PointSet[itk.D, Dimension].New()
 
-movingPS.SetPoints(itk.vector_container_from_array(final_mesh.flatten()))
+movingPS.SetPoints(itk.vector_container_from_array(final_mesh_points.flatten()))
 fixedPS.SetPoints(itk.vector_container_from_array(fixedMeshPoints.flatten()))
 
 
@@ -711,7 +714,7 @@ transformInitializer.SetTransformDomainMeshSize(
 transformInitializer.InitializeTransform()
 
 # Registration Loop
-numOfIterations = 10000
+numOfIterations = 2000
 maxStep = 0.1
 learningRate = 0.1
 
@@ -719,7 +722,7 @@ MetricType = itk.ExpectationBasedPointSetToPointSetMetricv4[type(movingPS)]
 metric = MetricType.New()
 metric.SetFixedPointSet(movingPS)
 metric.SetMovingPointSet(fixedPS)
-metric.SetPointSetSigma(2.5)
+metric.SetPointSetSigma(2)
 metric.SetEvaluationKNeighborhood(10)
 metric.SetMovingTransform(transform)
 metric.Initialize()
@@ -744,7 +747,7 @@ def iteration_update():
 
 iteration_command = itk.PyCommand.New()
 iteration_command.SetCommandCallable(iteration_update)
-# optimizer.AddObserver(itk.IterationEvent(), iteration_command)
+optimizer.AddObserver(itk.IterationEvent(), iteration_command)
 
 optimizer.StartOptimization()
 
@@ -780,7 +783,7 @@ np.save("displacement_field.npy", field)
 
 
 # Write the final registered mesh
-movingMeshPath = "movingMeshRigidRegistered.vtk"
+movingMeshPath = "/data/Apedata/Outputs/" + casename + "_movingMeshRigidRegistered.vtk"
 movingMesh = itk.meshread(movingMeshPath)
 
 movingMesh = itk.transform_mesh_filter(movingMesh, transform=final_transform)
