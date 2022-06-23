@@ -18,9 +18,10 @@ import copy
 
 from vtk.util import numpy_support
 from vtk.util.numpy_support import numpy_to_vtk
+
 # To enable itkwidgets window
-#from google.colab import output
-#output.enable_custom_widget_manager()
+# from google.colab import output
+# output.enable_custom_widget_manager()
 
 
 # In[39]:
@@ -31,10 +32,10 @@ from vtk.util.numpy_support import numpy_to_vtk
 
 # returns the points in numpy array
 def subsample_points_poisson(inputMesh, radius=4.5):
-    '''
+    """
         Return sub-sampled points as numpy array.
         The radius might need to be tuned as per the requirements.
-    '''
+    """
     import vtk
     from vtk.util import numpy_support
 
@@ -49,12 +50,14 @@ def subsample_points_poisson(inputMesh, radius=4.5):
     as_numpy = numpy_support.vtk_to_numpy(pointdata)
     return as_numpy
 
+
 def readvtk(filename):
     a = vtk.vtkPolyDataReader()
     a.SetFileName(filename)
     a.Update()
     m1 = a.GetOutput()
     return m1
+
 
 def readply(filename):
     a = vtk.vtkPLYReader()
@@ -63,13 +66,15 @@ def readply(filename):
     m1 = a.GetOutput()
     return m1
 
+
 def read_landmarks(filename):
-    '''
+    """
         Reads the landmarks fscv file and converts the points to correct coordinate system.
         Returns array of size N x 3
-    '''
+    """
     import pandas as pd
-    df = pd.read_csv(filename, comment='#', header=None)
+
+    df = pd.read_csv(filename, comment="#", header=None)
 
     points_x = np.expand_dims(-1 * np.array(df[1].tolist()), -1)
     points_y = np.expand_dims(-1 * np.array(df[2].tolist()), -1)
@@ -86,13 +91,13 @@ def read_landmarks(filename):
 # File paths
 
 # moving mesh will remain constant
-FIXED_MESH_FILE  = sys.argv[1]#'/data/Apedata/CorrectData/data/Gorilla/meshes/USNM174722-Cranium.ply'
-MOVING_MESH_FILE = sys.argv[2]#'/data/Apedata/CorrectData/data/Gorilla/meshes/USNM176211-Cranium.ply'
-FIXED_LANDMARK_FILE = sys.argv[3]
+FIXED_MESH_FILE = sys.argv[1]
+FIXED_LANDMARK_FILE = sys.argv[2]
+MOVING_MESH_FILE = sys.argv[3]
 MOVING_LANDMARK_FILE = sys.argv[4]
 
+casename = FIXED_MESH_FILE.split("/")[-1].split("-")[0]
 paths = [FIXED_MESH_FILE, MOVING_MESH_FILE]
-
 
 
 # Read the landmarks and create mesh from them
@@ -102,11 +107,14 @@ moving_landmark = read_landmarks(MOVING_LANDMARK_FILE)
 fixed_landmark_mesh = itk.Mesh[itk.D, 3].New()
 moving_landmark_mesh = itk.Mesh[itk.D, 3].New()
 
-fixed_landmark_mesh.SetPoints(itk.vector_container_from_array(fixed_landmark.flatten().astype('float32')))
-moving_landmark_mesh.SetPoints(itk.vector_container_from_array(moving_landmark.flatten().astype('float32')))
+fixed_landmark_mesh.SetPoints(
+    itk.vector_container_from_array(fixed_landmark.flatten().astype("float32"))
+)
+moving_landmark_mesh.SetPoints(
+    itk.vector_container_from_array(moving_landmark.flatten().astype("float32"))
+)
 
 itk_landmarks = [fixed_landmark_mesh, moving_landmark_mesh]
-
 
 
 # Write the meshes in vtk format so that they can be read in ITK
@@ -116,12 +124,12 @@ for path in paths:
     reader = vtk.vtkPLYReader()
     reader.SetFileName(path)
     reader.Update()
-    
+
     vtk_mesh = reader.GetOutput()
     vtk_meshes.append(vtk_mesh)
-    
+
 # Write back out to a filetype supported by ITK
-vtk_paths = [path.strip('.ply') + '.vtk' for path in paths]
+vtk_paths = [path.strip(".ply") + ".vtk" for path in paths]
 for idx, mesh in enumerate(vtk_meshes):
     writer = vtk.vtkPolyDataWriter()
     writer.SetInputData(mesh)
@@ -129,7 +137,7 @@ for idx, mesh in enumerate(vtk_meshes):
     writer.SetFileTypeToBinary()
     writer.SetFileName(vtk_paths[idx])
     writer.Update()
-    
+
 itk_meshes = [itk.meshread(path, pixel_type=itk.D) for path in vtk_paths]
 
 
@@ -137,27 +145,28 @@ itk_meshes = [itk.meshread(path, pixel_type=itk.D) for path in vtk_paths]
 
 
 # Convert meshes to images for performing moment based initialization
-print('Starting moment based initialization')
-itk_transformed_meshes= []
+print("Starting moment based initialization")
+itk_transformed_meshes = []
 
 itk_images = []
 for i, mesh in enumerate(itk_meshes):
     # Make all the points to positive coordinates
     mesh_points = itk.array_from_vector_container(mesh.GetPoints())
-    m    = np.min(mesh_points, 0)
+    m = np.min(mesh_points, 0)
     mesh_points = mesh_points - m
     mesh.SetPoints(itk.vector_container_from_array(mesh_points.flatten()))
-    
+
     # Apply same subtraction to landmark points
     landmark_points = itk.array_from_vector_container(itk_landmarks[i].GetPoints())
     landmark_points = landmark_points - m
-    itk_landmarks[i].SetPoints(itk.vector_container_from_array(landmark_points.flatten()))
-    
+    itk_landmarks[i].SetPoints(
+        itk.vector_container_from_array(landmark_points.flatten())
+    )
+
     itk_transformed_meshes.append(mesh)
-    itk_image = itk.triangle_mesh_to_binary_image_filter(mesh,
-                                                      origin=[0, 0, 0],
-                                                      spacing=[1, 1, 1],
-                                                      size=[250, 250, 250])
+    itk_image = itk.triangle_mesh_to_binary_image_filter(
+        mesh, origin=[0, 0, 0], spacing=[1, 1, 1], size=[250, 250, 250]
+    )
     itk_images.append(itk_image)
 
 itk_transforms = list()
@@ -170,7 +179,6 @@ for image in itk_images:
 
 
 # In[37]:
-
 
 
 # Write the Moment based initialized meshes as vtk file
@@ -188,20 +196,20 @@ fixedMesh = itk_transformed_meshes[0]
 movingMesh = itk_transformed_meshes[1]
 
 w1 = itk.MeshFileWriter[type(fixedMesh)].New()
-w1.SetFileName('fixedMesh.vtk')
+w1.SetFileName("fixedMesh.vtk")
 w1.SetFileTypeAsBINARY()
 w1.SetInput(fixedMesh)
 w1.Update()
 
 w1 = itk.MeshFileWriter[type(movingMesh)].New()
-w1.SetFileName('movingMesh.vtk')
+w1.SetFileName("movingMesh.vtk")
 w1.SetFileTypeAsBINARY()
 w1.SetInput(movingMesh)
 w1.Update()
 
 fixedLandmarkMesh = itk_transformed_landmarks[0]
 movingLandmarkMesh = itk_transformed_landmarks[1]
-print('Completed moment based initialization')
+print("Completed moment based initialization")
 
 
 # For performing RANSAC in parallel
@@ -211,21 +219,19 @@ from vtk.util.numpy_support import numpy_to_vtk
 
 
 def final_iteration(fixedPoints, movingPoints, transform_type):
-    '''
+    """
         Perform the final iteration of alignment.
         
         Args:
             fixedPoints, movingPoints, transform_type: 0 or 1 or 2
         Returns:
             (tranformed movingPoints, tranform)
-    '''
+    """
     mesh_fixed = itk.Mesh[itk.D, 3].New()
     mesh_moving = itk.Mesh[itk.D, 3].New()
 
-    mesh_fixed.SetPoints(itk.vector_container_from_array(
-        fixedPoints.flatten()))
-    mesh_moving.SetPoints(
-        itk.vector_container_from_array(movingPoints.flatten()))
+    mesh_fixed.SetPoints(itk.vector_container_from_array(fixedPoints.flatten()))
+    mesh_moving.SetPoints(itk.vector_container_from_array(movingPoints.flatten()))
 
     if transform_type == 0:
         TransformType = itk.Euler3DTransform[itk.D]
@@ -238,15 +244,15 @@ def final_iteration(fixedPoints, movingPoints, transform_type):
     transform.SetIdentity()
 
     MetricType = itk.EuclideanDistancePointSetToPointSetMetricv4.PSD3
-    #MetricType = itk.PointToPlanePointSetToPointSetMetricv4.PSD3
+    # MetricType = itk.PointToPlanePointSetToPointSetMetricv4.PSD3
     metric = MetricType.New()
     metric.SetMovingPointSet(mesh_moving)
     metric.SetFixedPointSet(mesh_fixed)
     metric.SetMovingTransform(transform)
     metric.Initialize()
 
-    print('Initial Value ', metric.GetValue())
-    number_of_epochs = 5000
+    # print('Initial Value ', metric.GetValue())
+    number_of_epochs = 10000
     optimizer = itk.GradientDescentOptimizerv4Template[itk.D].New()
     optimizer.SetNumberOfIterations(number_of_epochs)
     optimizer.SetLearningRate(0.0001)
@@ -255,38 +261,49 @@ def final_iteration(fixedPoints, movingPoints, transform_type):
     optimizer.SetMetric(metric)
 
     def print_iteration():
-        print(f"It: {optimizer.GetCurrentIteration()}"
-              f" metric value: {optimizer.GetCurrentMetricValue():.6f} ")
+        print(
+            f"It: {optimizer.GetCurrentIteration()}"
+            f" metric value: {optimizer.GetCurrentMetricValue():.6f} "
+        )
 
-    optimizer.AddObserver(itk.IterationEvent(), print_iteration)
+    # optimizer.AddObserver(itk.IterationEvent(), print_iteration)
     optimizer.StartOptimization()
 
-    print('Final Value ', metric.GetValue())
+    print("Final Value ", metric.GetValue())
 
     # Get the correct transform and perform the final alignment
     current_transform = metric.GetMovingTransform().GetInverseTransform()
     itk_transformed_mesh = itk.transform_mesh_filter(
-        mesh_moving, transform=current_transform)
+        mesh_moving, transform=current_transform
+    )
 
-    return itk.array_from_vector_container(itk_transformed_mesh.GetPoints()), current_transform
+    return (
+        itk.array_from_vector_container(itk_transformed_mesh.GetPoints()),
+        current_transform,
+    )
 
 
-def ransac_icp_parallel(fixedMeshPoints, movingMeshPoints, movingMeshAllPoints,
-                        number_of_iterations, mesh_sub_sample_points,
-                        number_of_ransac_points, transform_type,
-                        convergance_value):
-    '''
+def ransac_icp_parallel(
+    fixedMeshPoints,
+    movingMeshPoints,
+    number_of_iterations,
+    mesh_sub_sample_points,
+    number_of_ransac_points,
+    transform_type,
+    convergance_value,
+):
+    """
         Perform Ransac by doing parallel iterations for different samples.
-    '''
+    """
     import numpy as np
+
     np.random.seed(0)
 
     all_points1 = fixedMeshPoints
     all_points2 = movingMeshPoints
 
-    def process(i, mesh_sub_sample_points, number_of_ransac_points,
-                return_result):
-        '''
+    def process(i, mesh_sub_sample_points, number_of_ransac_points, return_result):
+        """
         Args:
             i: input seed used to sample the points.
             number_of_ransac_points: Number of random points selected to perform the registration.
@@ -295,7 +312,7 @@ def ransac_icp_parallel(fixedMeshPoints, movingMeshPoints, movingMeshAllPoints,
         
         Returns: (Best Value, seed) or the transformed_points depending on return_result flag.
             
-        '''
+        """
 
         # Create Mesh inside the method to tackle the problem of serialization
 
@@ -304,22 +321,22 @@ def ransac_icp_parallel(fixedMeshPoints, movingMeshPoints, movingMeshAllPoints,
         mesh_fixed = itk.Mesh[itk.D, 3].New()
         mesh_moving = itk.Mesh[itk.D, 3].New()
 
-        mesh_fixed.SetPoints(
-            itk.vector_container_from_array(all_points1.flatten()))
-        mesh_moving.SetPoints(
-            itk.vector_container_from_array(all_points2.flatten()))
+        mesh_fixed.SetPoints(itk.vector_container_from_array(all_points1.flatten()))
+        mesh_moving.SetPoints(itk.vector_container_from_array(all_points2.flatten()))
 
         ps1 = itk.Mesh[itk.D, 3].New()
         ps2 = itk.Mesh[itk.D, 3].New()
 
         # Create small point sets
         np.random.seed(i)
-        random_indices = np.random.choice(all_points1.shape[0],
-                                          size=number_of_ransac_points)
+        random_indices = np.random.choice(
+            all_points1.shape[0], size=number_of_ransac_points
+        )
         p1_a = all_points1[random_indices, :]
 
-        random_indices = np.random.choice(all_points2.shape[0],
-                                          size=number_of_ransac_points)
+        random_indices = np.random.choice(
+            all_points2.shape[0], size=number_of_ransac_points
+        )
         p2_a = all_points2[random_indices, :]
 
         ps1.SetPoints(itk.vector_container_from_array(p1_a.flatten()))
@@ -343,8 +360,7 @@ def ransac_icp_parallel(fixedMeshPoints, movingMeshPoints, movingMeshAllPoints,
         metric.SetMovingTransform(transform)
         metric.Initialize()
 
-        optimizer = itk.ConjugateGradientLineSearchOptimizerv4Template[
-            itk.D].New()
+        optimizer = itk.ConjugateGradientLineSearchOptimizerv4Template[itk.D].New()
         optimizer.SetNumberOfIterations(20)
         optimizer.SetMaximumStepSizeInPhysicalUnits(0.1)
         optimizer.SetMinimumConvergenceValue(0.0)
@@ -363,7 +379,8 @@ def ransac_icp_parallel(fixedMeshPoints, movingMeshPoints, movingMeshAllPoints,
 
         current_transform = metric.GetTransform()
         itk_transformed_mesh = itk.transform_mesh_filter(
-            mesh_moving, transform=current_transform)
+            mesh_moving, transform=current_transform
+        )
 
         e_metric = itk.EuclideanDistancePointSetToPointSetMetricv4.PSD3.New()
         e_metric.SetFixedPointSet(mesh_fixed)
@@ -376,13 +393,14 @@ def ransac_icp_parallel(fixedMeshPoints, movingMeshPoints, movingMeshAllPoints,
             # Create a mesh using the moving points and transform it using the best transform
             mesh_moving = itk.Mesh[itk.D, 3].New()
             mesh_moving.SetPoints(
-                itk.vector_container_from_array(movingMeshPoints.flatten()))
+                itk.vector_container_from_array(movingMeshPoints.flatten())
+            )
 
             itk_transformed_mesh = itk.transform_mesh_filter(
-                mesh_moving, transform=current_transform)
+                mesh_moving, transform=current_transform
+            )
 
-            return itk.array_from_vector_container(
-                itk_transformed_mesh.GetPoints())
+            return itk.array_from_vector_container(itk_transformed_mesh.GetPoints())
         else:
             # To make the transform data serializable
             current_transform = itk.dict_from_transform(current_transform)
@@ -391,112 +409,122 @@ def ransac_icp_parallel(fixedMeshPoints, movingMeshPoints, movingMeshAllPoints,
     # Spawn multiple jobs to utilize all cores
     results = Parallel(n_jobs=8)(
         delayed(process)(i, mesh_sub_sample_points, number_of_ransac_points, 0)
-        for i in range(number_of_iterations))
+        for i in range(number_of_iterations)
+    )
 
     # Sort the results and get the best one i.e. the lowest one
     results = sorted(results)
 
     print(results[0][0], results[0][1])
-    final_result = process(results[0][1], mesh_sub_sample_points,
-                          number_of_ransac_points, 1)
-    
+    final_result = process(
+        results[0][1], mesh_sub_sample_points, number_of_ransac_points, 1
+    )
+
     return final_result, results[0]
 
 
 def scale_mesh(input_mesh, scale_factor):
-    '''
+    """
         Scale the input_mesh by the given scale_factor iso-tropically
-    '''
+    """
     mesh_points = itk.array_from_vector_container(input_mesh.GetPoints())
     mesh_points = mesh_points * scale_factor
-    input_mesh.SetPoints(itk.vector_container_from_array(
-        mesh_points.flatten()))
+    input_mesh.SetPoints(itk.vector_container_from_array(mesh_points.flatten()))
     return input_mesh
 
 
-def perform_scaling_and_centering(movingPoints, fixedPoints, movingMesh,
-                                  fixedMesh):
-    '''
+def perform_scaling_and_centering(movingPoints, fixedPoints, movingMesh, fixedMesh):
+    """
         Perform scaling of points in the moving mesh and scale 
         the original mesh by same factor.
-    '''
-    sourceSize = np.linalg.norm(
-        np.max(movingPoints, 0) - np.min(movingPoints, 0))
-    targetSize = np.linalg.norm(
-        np.max(fixedPoints, 0) - np.min(fixedPoints, 0))
+    """
+    sourceSize = np.linalg.norm(np.max(movingPoints, 0) - np.min(movingPoints, 0))
+    targetSize = np.linalg.norm(np.max(fixedPoints, 0) - np.min(fixedPoints, 0))
 
     scaling = (targetSize) / sourceSize
 
     scaledMovingPoints = movingPoints * scaling
     scaledMovingMesh = scale_mesh(movingMesh, scaling)
 
-    return scaledMovingPoints, scaledMovingMesh
+    return scaledMovingPoints, scaledMovingMesh, scaling
 
 
-print('Starting Ransac')
+print("Starting Ransac")
 import time
 
-number_of_iterations = 1000
+number_of_iterations = 10000
 number_of_ransac_points = 100
 mesh_sub_sample_points = 5000
 convergence_value = 3
 transform_type = 0
 
-movingMeshPath = 'movingMesh.vtk'
-fixedMeshPath = 'fixedMesh.vtk'
+movingMeshPath = "movingMesh.vtk"
+fixedMeshPath = "fixedMesh.vtk"
 
 movingMesh = readvtk(movingMeshPath)
 fixedMesh = readvtk(fixedMeshPath)
 
-movingMeshAllPoints = numpy_support.vtk_to_numpy(
-    movingMesh.GetPoints().GetData())
+movingMeshAllPoints = numpy_support.vtk_to_numpy(movingMesh.GetPoints().GetData())
 
 # Sub-Sample the points
 movingMeshPoints = subsample_points_poisson(movingMesh, radius=5.5)
 fixedMeshPoints = subsample_points_poisson(fixedMesh, radius=5.5)
 
+# Sub-Sample the points
+movingMeshPoints_ransac = subsample_points_poisson(movingMesh, radius=11.5)
+fixedMeshPoints_ransac = subsample_points_poisson(fixedMesh, radius=11.5)
+
 print(movingMeshPoints.shape, fixedMeshPoints.shape)
+print(movingMeshPoints_ransac.shape, fixedMeshPoints_ransac.shape)
 
 movingMesh = itk.meshread(movingMeshPath, itk.D)
 fixedMesh = itk.meshread(fixedMeshPath, itk.D)
 
-movingMeshPoints, scaledMovingMesh = perform_scaling_and_centering(
-    movingMeshPoints, fixedMeshPoints, movingMesh, fixedMesh)
+movingMeshPoints, scaledMovingMesh, scale_factor = perform_scaling_and_centering(
+    movingMeshPoints, fixedMeshPoints, movingMesh, fixedMesh
+)
+
+# Scale the points to be used for ransac
+movingMeshPoints_ransac = movingMeshPoints_ransac*scale_factor
 
 # Perform Initial alignment using Ransac parallel iterations
 start_time = time.time()
 transform_type = 2
 
-itk_transformed_points, transform_matrix = ransac_icp_parallel(fixedMeshPoints, movingMeshPoints,
-                                             movingMeshAllPoints,
-                                             number_of_iterations,
-                                             mesh_sub_sample_points,
-                                             number_of_ransac_points,
-                                             transform_type, convergence_value)
+itk_transformed_points, transform_matrix = ransac_icp_parallel(
+    fixedMeshPoints_ransac,
+    movingMeshPoints_ransac,
+    number_of_iterations,
+    mesh_sub_sample_points,
+    number_of_ransac_points,
+    transform_type,
+    convergence_value,
+)
 end_time = time.time()
 
 print(end_time - start_time)
-print('itk_transformed_points shape ', itk_transformed_points.shape)
+# print('itk_transformed_points shape ', itk_transformed_points.shape)
 
-print('Completed Ransac')
+print("Completed Ransac")
 
 # For taking care of a bug in the code
 first_transform = transform_matrix[2]
-first_transform[0]['transformType'] = 'D'
+first_transform[0]["transformType"] = "D"
 first_transform = itk.transform_from_dict(first_transform)
 
-print('Starting Rigid Refinement')
+print("Starting Rigid Refinement")
 # Perform final alignment using the Euler3DTransform
 transform_type = 0
-final_mesh, second_transform = final_iteration(fixedMeshPoints, itk_transformed_points,
-                             transform_type)
+final_mesh, second_transform = final_iteration(
+    fixedMeshPoints, itk_transformed_points, transform_type
+)
 
-# Write the sub-sampled moving mesh points 
+# Write the sub-sampled moving mesh points
 rigidRegisteredPoints = itk.Mesh.D3.New()
 rigidRegisteredPoints.SetPoints(itk.vector_container_from_array(final_mesh.flatten()))
 
 w1 = itk.MeshFileWriter[type(rigidRegisteredPoints)].New()
-w1.SetFileName(FIXED_MESH_FILE.split('/')[-1].split('.')[0]+'_rigidRegisteredPoints.vtk')
+w1.SetFileName("/data/Apedata/Outputs/" + casename + "_rigidRegisteredPoints.vtk")
 w1.SetFileTypeAsBINARY()
 w1.SetInput(rigidRegisteredPoints)
 w1.Update()
@@ -504,20 +532,19 @@ w1.Update()
 # Transform the full mesh and write the output
 mesh_moving = itk.meshread(movingMeshPath, itk.D)
 
-mesh_moving = itk.transform_mesh_filter(
-        mesh_moving, transform=first_transform)
+mesh_moving = itk.transform_mesh_filter(mesh_moving, transform=first_transform)
 
-mesh_moving = itk.transform_mesh_filter(
-        mesh_moving, transform=second_transform)
+mesh_moving = itk.transform_mesh_filter(mesh_moving, transform=second_transform)
 
 w1 = itk.MeshFileWriter[type(mesh_moving)].New()
-w1.SetFileName(FIXED_MESH_FILE.split('/')[-1].split('.')[0]+'_movingMeshRigidRegistered.vtk')
+w1.SetFileName("/data/Apedata/Outputs/" + casename + "_movingMeshRigidRegistered.vtk")
 w1.SetFileTypeAsBINARY()
 w1.SetInput(mesh_moving)
 w1.Update()
 
-print('Completed Rigid Refinement')
+print("Completed Rigid Refinement")
 
+exit(0)
 # In[112]:
 
 
@@ -546,10 +573,12 @@ ElementIdentifierType = itk.UL
 CoordType = itk.F
 Dimension = 3
 
-VecContType = itk.VectorContainer[ElementIdentifierType, itk.Point[CoordType,
-                                                                   Dimension]]
-bounding_box = itk.BoundingBox[ElementIdentifierType, Dimension, CoordType,
-                               VecContType].New()
+VecContType = itk.VectorContainer[
+    ElementIdentifierType, itk.Point[CoordType, Dimension]
+]
+bounding_box = itk.BoundingBox[
+    ElementIdentifierType, Dimension, CoordType, VecContType
+].New()
 
 bounding_box.SetPoints(movingPS.GetPoints())
 bounding_box.ComputeBoundingBox()
@@ -560,9 +589,9 @@ maxBounds = np.array(bounding_box.GetMaximum())
 spacing = np.sqrt(bounding_box.GetDiagonalLength2()) / imageDiagonal
 diff = maxBounds - minBounds
 
-print('Spacing ', spacing)
-print('minBounds ', minBounds)
-print('maxBounds ', maxBounds)
+# print('Spacing ', spacing)
+# print('minBounds ', minBounds)
+# print('maxBounds ', maxBounds)
 
 fixedImageSize = [0] * 3
 fixedImageSize[0] = math.ceil(1.25 * diff[0] / spacing)
@@ -588,8 +617,7 @@ fixedImage.Allocate()
 # Create BSpline Transformation object and initialize the parameters
 SplineOrder = 3
 TransformType = itk.BSplineTransform[itk.D, Dimension, SplineOrder]
-InitializerType = itk.BSplineTransformInitializer[TransformType,
-                                                  FixedImageType]
+InitializerType = itk.BSplineTransformInitializer[TransformType, FixedImageType]
 
 transform = TransformType.New()
 
@@ -598,11 +626,12 @@ transformInitializer = InitializerType.New()
 transformInitializer.SetTransform(transform)
 transformInitializer.SetImage(fixedImage)
 transformInitializer.SetTransformDomainMeshSize(
-    numberOfGridNodesInOneDimension - SplineOrder)
+    numberOfGridNodesInOneDimension - SplineOrder
+)
 transformInitializer.InitializeTransform()
 
 # Registration Loop
-numOfIterations = 5000
+numOfIterations = 10000
 maxStep = 0.1
 learningRate = 0.1
 
@@ -610,12 +639,12 @@ MetricType = itk.ExpectationBasedPointSetToPointSetMetricv4[type(movingPS)]
 metric = MetricType.New()
 metric.SetFixedPointSet(movingPS)
 metric.SetMovingPointSet(fixedPS)
-metric.SetPointSetSigma(2)
+metric.SetPointSetSigma(2.5)
 metric.SetEvaluationKNeighborhood(10)
 metric.SetMovingTransform(transform)
 metric.Initialize()
 
-print('Metric Created')
+# print('Metric Created')
 
 optimizer = itk.RegularStepGradientDescentOptimizerv4.D.New()
 optimizer.SetNumberOfIterations(numOfIterations)
@@ -627,14 +656,15 @@ optimizer.SetMetric(metric)
 
 
 def iteration_update():
-    print(f"It: {optimizer.GetCurrentIteration()}"
-    f" metric value: {optimizer.GetCurrentMetricValue():.6f} ")
-
+    print(
+        f"It: {optimizer.GetCurrentIteration()}"
+        f" metric value: {optimizer.GetCurrentMetricValue():.6f} "
+    )
 
 
 iteration_command = itk.PyCommand.New()
 iteration_command.SetCommandCallable(iteration_update)
-optimizer.AddObserver(itk.IterationEvent(), iteration_command)
+# optimizer.AddObserver(itk.IterationEvent(), iteration_command)
 
 optimizer.StartOptimization()
 
@@ -644,8 +674,7 @@ final_transform = metric.GetMovingTransform()
 e_metric = itk.EuclideanDistancePointSetToPointSetMetricv4.PSD3.New()
 e_metric.SetFixedPointSet(fixedPS)
 e_metric.SetMovingPointSet(movingPS)
-print('Euclidean Metric Before TSD Deformable Registration ',
-      e_metric.GetValue())
+print("Euclidean Metric Before TSD Deformable Registration ", e_metric.GetValue())
 
 movingPSNew = itk.PointSet[itk.D, 3].New()
 numberOfPoints = movingPS.GetNumberOfPoints()
@@ -656,8 +685,7 @@ for n in range(0, numberOfPoints):
 e_metric = itk.EuclideanDistancePointSetToPointSetMetricv4.PSD3.New()
 e_metric.SetFixedPointSet(fixedPS)
 e_metric.SetMovingPointSet(movingPSNew)
-print('Euclidean Metric After TSD Deformable Registration ',
-      e_metric.GetValue())
+print("Euclidean Metric After TSD Deformable Registration ", e_metric.GetValue())
 
 
 # Write the Displacement Field
@@ -668,40 +696,46 @@ convertFilter.SetReferenceImage(fixedImage)
 convertFilter.Update()
 field = convertFilter.GetOutput()
 field = np.array(field)
-np.save('displacement_field.npy', field)
+np.save("displacement_field.npy", field)
 
 
 # Write the final registered mesh
-movingMeshPath = 'movingMeshRigidRegistered.vtk'
+movingMeshPath = "movingMeshRigidRegistered.vtk"
 movingMesh = itk.meshread(movingMeshPath)
 
-movingMesh = itk.transform_mesh_filter(
-        movingMesh, transform=final_transform)
+movingMesh = itk.transform_mesh_filter(movingMesh, transform=final_transform)
 
 w1 = itk.MeshFileWriter[type(movingMesh)].New()
-w1.SetFileName(FIXED_MESH_FILE.split('/')[-1].split('.')[0]+'_movingMeshFinalRegistered.vtk')
+w1.SetFileName("/data/Apedata/Outputs/" + casename + "_movingMeshFinalRegistered.vtk")
 w1.SetFileTypeAsBINARY()
 w1.SetInput(movingMesh)
 w1.Update()
 
 
-print('Calculating distance between landmarks')
+print("Calculating distance between landmarks")
 movingLandmarkMesh = itk.transform_mesh_filter(
-        movingLandmarkMesh, transform=first_transform)
+    movingLandmarkMesh, transform=first_transform
+)
 
 movingLandmarkMesh = itk.transform_mesh_filter(
-        movingLandmarkMesh, transform=second_transform)
+    movingLandmarkMesh, transform=second_transform
+)
 
 movingLandmarkMesh = itk.transform_mesh_filter(
-        movingLandmarkMesh, transform=final_transform)
+    movingLandmarkMesh, transform=final_transform
+)
 
 moving_landmark_points = itk.array_from_vector_container(movingLandmarkMesh.GetPoints())
 fixed_landmark_points = itk.array_from_vector_container(fixedLandmarkMesh.GetPoints())
 
-np.save('moving_landmark.npy', moving_landmark_points)
-np.save('fixed_landmark.npy', fixed_landmark_points)
+np.save(
+    "/data/Apedata/Outputs/" + casename + "_moving_landmark.npy", moving_landmark_points
+)
+np.save(
+    "/data/Apedata/Outputs/" + casename + "_fixed_landmark.npy", fixed_landmark_points
+)
 
 # Get the difference between the landmarks
 diff = np.square(moving_landmark_points - fixed_landmark_points)
 diff = np.sqrt(np.sum(diff, 1))
-np.save('diff_landmark.npy', diff)
+np.save("/data/Apedata/Outputs/" + casename + "_diff_landmark.npy", diff)
