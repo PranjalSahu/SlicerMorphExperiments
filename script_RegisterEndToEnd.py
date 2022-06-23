@@ -593,7 +593,7 @@ InitializerType = itk.BSplineTransformInitializer[TransformType,
 
 transform = TransformType.New()
 
-numberOfGridNodesInOneDimension = 10
+numberOfGridNodesInOneDimension = 8
 transformInitializer = InitializerType.New()
 transformInitializer.SetTransform(transform)
 transformInitializer.SetImage(fixedImage)
@@ -602,9 +602,9 @@ transformInitializer.SetTransformDomainMeshSize(
 transformInitializer.InitializeTransform()
 
 # Registration Loop
-numOfIterations = 2500
-maxStep = 0.2
-learningRate = 0.2
+numOfIterations = 5000
+maxStep = 0.1
+learningRate = 0.1
 
 MetricType = itk.ExpectationBasedPointSetToPointSetMetricv4[type(movingPS)]
 metric = MetricType.New()
