@@ -30,6 +30,23 @@ from vtk.util.numpy_support import numpy_to_vtk
 
 # Helper Functions
 
+def get_euclidean_distance(input_fixedPoints, input_movingPoints):
+    mesh_fixed = itk.Mesh[itk.D, 3].New()
+    mesh_moving = itk.Mesh[itk.D, 3].New()
+
+    mesh_fixed.SetPoints(itk.vector_container_from_array(
+        input_fixedPoints.flatten()))
+    mesh_moving.SetPoints(
+        itk.vector_container_from_array(input_movingPoints.flatten()))
+    
+    MetricType = itk.EuclideanDistancePointSetToPointSetMetricv4.PSD3
+    metric = MetricType.New()
+    metric.SetMovingPointSet(mesh_moving)
+    metric.SetFixedPointSet(mesh_fixed)
+    metric.Initialize()
+    
+    return metric.GetValue()
+
 def scale_mesh(input_mesh, scale_factor):
     '''
         Scale the input_mesh by the given scale_factor iso-tropically
@@ -258,7 +275,7 @@ np.save('movingMesh_landmarks.npy', itk.array_from_vector_container(movingLandma
 
 print("Completed moment based initialization")
 
-exit(0)
+#exit(0)
 # For performing RANSAC in parallel
 
 from vtk.util import numpy_support
@@ -313,7 +330,7 @@ def final_iteration(fixedPoints, movingPoints, transform_type):
             f" metric value: {optimizer.GetCurrentMetricValue():.6f} "
         )
 
-    # optimizer.AddObserver(itk.IterationEvent(), print_iteration)
+    #optimizer.AddObserver(itk.IterationEvent(), print_iteration)
     optimizer.StartOptimization()
 
     print("Final Value ", metric.GetValue())
@@ -409,7 +426,7 @@ def ransac_icp_parallel(
 
         optimizer = itk.ConjugateGradientLineSearchOptimizerv4Template[itk.D].New()
         optimizer.SetNumberOfIterations(20)
-        optimizer.SetMaximumStepSizeInPhysicalUnits(0.1)
+        optimizer.SetMaximumStepSizeInPhysicalUnits(0.05)
         optimizer.SetMinimumConvergenceValue(0.0)
         optimizer.SetConvergenceWindowSize(20)
         optimizer.SetMetric(metric)
@@ -462,6 +479,7 @@ def ransac_icp_parallel(
     # Sort the results and get the best one i.e. the lowest one
     results = sorted(results)
 
+    # Transform the points using the best returned transform
     print(results[0][0], results[0][1])
     final_result = process(
         results[0][1], mesh_sub_sample_points, number_of_ransac_points, 1
@@ -473,7 +491,7 @@ def ransac_icp_parallel(
 print("Starting Ransac")
 import time
 
-number_of_iterations = 10000
+number_of_iterations = 2000
 number_of_ransac_points = 250
 mesh_sub_sample_points = 5000
 convergence_value = 3
@@ -498,7 +516,6 @@ fixedMeshPoints = subsample_points_poisson(fixedMesh_vtk, radius=5.5)
 print(movingMeshPoints.shape, fixedMeshPoints.shape)
 print(movingMeshPoints_ransac.shape, fixedMeshPoints_ransac.shape)
 
-
 def orient_points(input_points, x, y, z):
     '''
         Orients the input points based on the x, y and z orientations given.
@@ -510,25 +527,47 @@ def orient_points(input_points, x, y, z):
 
     return output_points
 
+def orient_points_in_mesh(input_mesh, x, y, z):
+    input_points = itk.array_from_vector_container(input_mesh.GetPoints())
+    oriented_points = orient_points(input_points, x, y, z)
+    input_mesh.SetPoints(itk.vector_container_from_array(oriented_points.flatten()))
+    return
+
+best_value = 10000
+best_points = None
+best_orientation = [1, 1, 1]
 # Loop through all the combinations of orientations
-# for x in [-1, 1]:
-#     for y in [-1, 1]:
-#         for z in [-1, 1]:
-#             oriented_points = orient_points(movingMeshPoints_ransac)
+for x in [-1, 1]:
+    for y in [-1, 1]:
+        for z in [-1, 1]:
+            oriented_points = orient_points(movingMeshPoints, x, y, z)
+            #print(x, y, z)
+            value = get_euclidean_distance(fixedMeshPoints, oriented_points)
+            if value < best_value:
+                best_points = oriented_points
+                best_value = value
+                best_orientation = [x, y, z]
+
+movingMeshPoints_ransac = orient_points(movingMeshPoints_ransac, best_orientation[0], best_orientation[1], best_orientation[2])
+movingMeshPoints = orient_points(movingMeshPoints, best_orientation[0], best_orientation[1], best_orientation[2])
+
 # w1 = itk.MeshFileWriter[type(scaledMovingMesh)].New()
 # w1.SetFileName("movingMesh_scaled.vtk")
 # w1.SetFileTypeAsBINARY()
 # w1.SetInput(scaledMovingMesh)
 # w1.Update()
 
+np.save('movingMeshPoints.npy', movingMeshPoints)
+np.save('fixedMeshPoints.npy', fixedMeshPoints)
+#exit(0)
 
 # Perform Initial alignment using Ransac parallel iterations
 start_time = time.time()
 transform_type = 2
 
 itk_transformed_points, transform_matrix = ransac_icp_parallel(
-    fixedMeshPoints_ransac,
-    movingMeshPoints_ransac,
+    fixedMeshPoints,
+    movingMeshPoints,
     number_of_iterations,
     mesh_sub_sample_points,
     number_of_ransac_points,
@@ -547,16 +586,22 @@ first_transform = transform_matrix[2]
 first_transform[0]["transformType"] = "D"
 first_transform = itk.transform_from_dict(first_transform)
 
+# Apply the transformation matrix to larger set of points
+# itk_transformed_points = itk.Mesh.D3.New()
+# itk_transformed_points.SetPoints(itk.vector_container_from_array(movingMeshPoints.flatten()))
+# itk_transformed_points = itk.transform_mesh_filter(itk_transformed_points, transform=first_transform)
+# itk_transformed_points = itk.array_from_vector_container(itk_transformed_points.GetPoints())
+
 print("Starting Rigid Refinement")
 # Perform final alignment using the Euler3DTransform
 transform_type = 0
-final_mesh, second_transform = final_iteration(
+final_mesh_points, second_transform = final_iteration(
     fixedMeshPoints, itk_transformed_points, transform_type
 )
 
 # Write the sub-sampled moving mesh points
 rigidRegisteredPoints = itk.Mesh.D3.New()
-rigidRegisteredPoints.SetPoints(itk.vector_container_from_array(final_mesh.flatten()))
+rigidRegisteredPoints.SetPoints(itk.vector_container_from_array(final_mesh_points.flatten()))
 
 w1 = itk.MeshFileWriter[type(rigidRegisteredPoints)].New()
 w1.SetFileName("/data/Apedata/Outputs/" + casename + "_rigidRegisteredPoints.vtk")
@@ -567,8 +612,8 @@ w1.Update()
 # Transform the full mesh and write the output
 mesh_moving = itk.meshread(movingMeshPath, itk.D)
 
+orient_points_in_mesh(mesh_moving, best_orientation[0], best_orientation[1], best_orientation[2])
 mesh_moving = itk.transform_mesh_filter(mesh_moving, transform=first_transform)
-
 mesh_moving = itk.transform_mesh_filter(mesh_moving, transform=second_transform)
 
 w1 = itk.MeshFileWriter[type(mesh_moving)].New()
