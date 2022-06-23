@@ -6,6 +6,7 @@
 # Import all packages
 
 import numpy as np
+from sklearn.preprocessing import scale
 import itk
 import vtk
 import itkwidgets
@@ -29,6 +30,15 @@ from vtk.util.numpy_support import numpy_to_vtk
 
 # Helper Functions
 
+def scale_mesh(input_mesh, scale_factor):
+    '''
+        Scale the input_mesh by the given scale_factor iso-tropically
+    '''
+    mesh_points = itk.array_from_vector_container(input_mesh.GetPoints())
+    mesh_points = mesh_points * scale_factor
+    input_mesh.SetPoints(itk.vector_container_from_array(
+        mesh_points.flatten()))
+    return input_mesh
 
 # returns the points in numpy array
 def subsample_points_poisson(inputMesh, radius=4.5):
@@ -136,6 +146,30 @@ for path in paths:
 
     vtk_meshes.append(vtk_mesh)
 
+# Scale mesh before doing moment based initialization
+box_filter = vtk.vtkBoundingBox()
+box_filter.SetBounds(vtk_meshes[0].GetBounds())
+fixedlength = box_filter.GetDiagonalLength()
+
+box_filter = vtk.vtkBoundingBox()
+box_filter.SetBounds(vtk_meshes[1].GetBounds())
+movinglength = box_filter.GetDiagonalLength()
+
+scale_factor = fixedlength / movinglength
+
+points = vtk_meshes[1].GetPoints()
+pointdata = points.GetData()
+points_as_numpy = numpy_support.vtk_to_numpy(pointdata)
+points_as_numpy = points_as_numpy*scale_factor
+
+vtk_data_array = numpy_support.numpy_to_vtk(num_array=points_as_numpy, deep=True, array_type=vtk.VTK_FLOAT)
+points2 = vtk.vtkPoints()
+points2.SetData(vtk_data_array)
+vtk_meshes[1].SetPoints(points2)
+
+# scale the landmark moving mesh also
+itk_landmarks[1] = scale_mesh(itk_landmarks[1], scale_factor)
+
 # Write back out to a filetype supported by ITK
 vtk_paths = [path.strip(".ply") + ".vtk" for path in paths]
 for idx, mesh in enumerate(vtk_meshes):
@@ -185,11 +219,7 @@ for image in itk_images:
     calculator.Compute()
     itk_transforms.append(calculator.GetPhysicalAxesToPrincipalAxesTransform())
 
-
-# In[37]:
-
-
-# Write the Moment based initialized meshes as vtk file
+# Transform the mesh and landmarks using the moment based initialized transform
 itk_transformed_meshes = [
     itk.transform_mesh_filter(mesh, transform=itk_transforms[idx])
     for idx, mesh in enumerate(itk_meshes)
@@ -217,9 +247,13 @@ w1.Update()
 
 fixedLandmarkMesh = itk_transformed_landmarks[0]
 movingLandmarkMesh = itk_transformed_landmarks[1]
+
+np.save('fixedMesh_landmarks.npy', itk.array_from_vector_container(fixedLandmarkMesh.GetPoints()))
+np.save('movingMesh_landmarks.npy', itk.array_from_vector_container(movingLandmarkMesh.GetPoints()))
+
 print("Completed moment based initialization")
 
-
+exit(0)
 # For performing RANSAC in parallel
 
 from vtk.util import numpy_support
@@ -431,32 +465,6 @@ def ransac_icp_parallel(
     return final_result, results[0]
 
 
-def scale_mesh(input_mesh, scale_factor):
-    """
-        Scale the input_mesh by the given scale_factor iso-tropically
-    """
-    mesh_points = itk.array_from_vector_container(input_mesh.GetPoints())
-    mesh_points = mesh_points * scale_factor
-    input_mesh.SetPoints(itk.vector_container_from_array(mesh_points.flatten()))
-    return input_mesh
-
-
-def perform_scaling_and_centering(movingPoints, fixedPoints, movingMesh, fixedMesh):
-    """
-        Perform scaling of points in the moving mesh and scale 
-        the original mesh by same factor.
-    """
-    sourceSize = np.linalg.norm(np.max(movingPoints, 0) - np.min(movingPoints, 0))
-    targetSize = np.linalg.norm(np.max(fixedPoints, 0) - np.min(fixedPoints, 0))
-
-    scaling = (targetSize) / sourceSize
-
-    scaledMovingPoints = movingPoints * scaling
-    scaledMovingMesh = scale_mesh(movingMesh, scaling)
-
-    return scaledMovingPoints, scaledMovingMesh, scaling
-
-
 print("Starting Ransac")
 import time
 
@@ -474,30 +482,40 @@ fixedMesh_vtk = readvtk(fixedMeshPath)
 
 movingMeshAllPoints = numpy_support.vtk_to_numpy(movingMesh_vtk.GetPoints().GetData())
 
-# Sub-Sample the points for rigid refinement and deformable registration
-movingMeshPoints = subsample_points_poisson(movingMesh_vtk, radius=5.5)
-fixedMeshPoints = subsample_points_poisson(fixedMesh_vtk, radius=5.5)
-
 # Sub-Sample the points for ransac
 movingMeshPoints_ransac = subsample_points_poisson(movingMesh_vtk, radius=11.5)
 fixedMeshPoints_ransac = subsample_points_poisson(fixedMesh_vtk, radius=11.5)
+
+# Sub-Sample the points for rigid refinement and deformable registration
+movingMeshPoints = subsample_points_poisson(movingMesh_vtk, radius=5.5)
+fixedMeshPoints = subsample_points_poisson(fixedMesh_vtk, radius=5.5)
 
 print(movingMeshPoints.shape, fixedMeshPoints.shape)
 print(movingMeshPoints_ransac.shape, fixedMeshPoints_ransac.shape)
 
 
-movingMeshPoints, scaledMovingMesh, scale_factor = perform_scaling_and_centering(
-    movingMeshPoints, fixedMeshPoints, movingMesh, fixedMesh
-)
+def orient_points(input_points, x, y, z):
+    '''
+        Orients the input points based on the x, y and z orientations given.
+    '''
+    output_points = copy.deepcopy(input_points)
+    output_points[:, 0] = output_points[:, 0]*x
+    output_points[:, 1] = output_points[:, 1]*y
+    output_points[:, 2] = output_points[:, 2]*z
 
-w1 = itk.MeshFileWriter[type(scaledMovingMesh)].New()
-w1.SetFileName("movingMesh_scaled.vtk")
-w1.SetFileTypeAsBINARY()
-w1.SetInput(scaledMovingMesh)
-w1.Update()
+    return output_points
 
-# Scale the points to be used for ransac
-movingMeshPoints_ransac = movingMeshPoints_ransac*scale_factor
+# Loop through all the combinations of orientations
+# for x in [-1, 1]:
+#     for y in [-1, 1]:
+#         for z in [-1, 1]:
+#             oriented_points = orient_points(movingMeshPoints_ransac)
+# w1 = itk.MeshFileWriter[type(scaledMovingMesh)].New()
+# w1.SetFileName("movingMesh_scaled.vtk")
+# w1.SetFileTypeAsBINARY()
+# w1.SetInput(scaledMovingMesh)
+# w1.Update()
+
 
 # Perform Initial alignment using Ransac parallel iterations
 start_time = time.time()
