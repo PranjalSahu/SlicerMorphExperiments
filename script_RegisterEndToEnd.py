@@ -88,13 +88,28 @@ def read_landmarks(filename):
 # moving mesh will remain constant
 FIXED_MESH_FILE  = sys.argv[1]#'/data/Apedata/CorrectData/data/Gorilla/meshes/USNM174722-Cranium.ply'
 MOVING_MESH_FILE = sys.argv[2]#'/data/Apedata/CorrectData/data/Gorilla/meshes/USNM176211-Cranium.ply'
+FIXED_LANDMARK_FILE = sys.argv[3]
+MOVING_LANDMARK_FILE = sys.argv[4]
 
 paths = [FIXED_MESH_FILE, MOVING_MESH_FILE]
 
 
 
-# Write the meshes in vtk format so that they can be read in ITK
+# Read the landmarks and create mesh from them
+fixed_landmark = read_landmarks(FIXED_LANDMARK_FILE)
+moving_landmark = read_landmarks(MOVING_LANDMARK_FILE)
 
+fixed_landmark_mesh = itk.Mesh[itk.D, 3].New()
+moving_landmark_mesh = itk.Mesh[itk.D, 3].New()
+
+fixed_landmark_mesh.SetPoints(itk.vector_container_from_array(fixed_landmark.flatten().astype('float32')))
+moving_landmark_mesh.SetPoints(itk.vector_container_from_array(moving_landmark.flatten().astype('float32')))
+
+itk_landmarks = [fixed_landmark_mesh, moving_landmark_mesh]
+
+
+
+# Write the meshes in vtk format so that they can be read in ITK
 vtk_meshes = list()
 
 for path in paths:
@@ -126,12 +141,17 @@ print('Starting moment based initialization')
 itk_transformed_meshes= []
 
 itk_images = []
-for mesh in itk_meshes:
+for i, mesh in enumerate(itk_meshes):
     # Make all the points to positive coordinates
-    temp = itk.array_from_vector_container(mesh.GetPoints())
-    m    = np.min(temp, 0)
-    temp = temp - m
-    mesh.SetPoints(itk.vector_container_from_array(temp.flatten())) 
+    mesh_points = itk.array_from_vector_container(mesh.GetPoints())
+    m    = np.min(mesh_points, 0)
+    mesh_points = mesh_points - m
+    mesh.SetPoints(itk.vector_container_from_array(mesh_points.flatten()))
+    
+    # Apply same subtraction to landmark points
+    landmark_points = itk.array_from_vector_container(itk_landmarks[i].GetPoints())
+    landmark_points = landmark_points - m
+    itk_landmarks[i].SetPoints(itk.vector_container_from_array(landmark_points.flatten()))
     
     itk_transformed_meshes.append(mesh)
     itk_image = itk.triangle_mesh_to_binary_image_filter(mesh,
@@ -139,7 +159,6 @@ for mesh in itk_meshes:
                                                       spacing=[1, 1, 1],
                                                       size=[250, 250, 250])
     itk_images.append(itk_image)
-                                                         
 
 itk_transforms = list()
 
@@ -153,14 +172,19 @@ for image in itk_images:
 # In[37]:
 
 
-# Write the Moment based initialized meshes as vtk file
 
+# Write the Moment based initialized meshes as vtk file
 itk_transformed_meshes = [
     itk.transform_mesh_filter(mesh, transform=itk_transforms[idx])
     for idx, mesh in enumerate(itk_meshes)
 ]
 
-fixedMesh  = itk_transformed_meshes[0]
+itk_transformed_landmarks = [
+    itk.transform_mesh_filter(mesh, transform=itk_transforms[idx])
+    for idx, mesh in enumerate(itk_landmarks)
+]
+
+fixedMesh = itk_transformed_meshes[0]
 movingMesh = itk_transformed_meshes[1]
 
 w1 = itk.MeshFileWriter[type(fixedMesh)].New()
@@ -175,8 +199,9 @@ w1.SetFileTypeAsBINARY()
 w1.SetInput(movingMesh)
 w1.Update()
 
+fixedLandmarkMesh = itk_transformed_landmarks[0]
+movingLandmarkMesh = itk_transformed_landmarks[1]
 print('Completed moment based initialization')
-# In[ ]:
 
 
 # For performing RANSAC in parallel
@@ -471,7 +496,7 @@ rigidRegisteredPoints = itk.Mesh.D3.New()
 rigidRegisteredPoints.SetPoints(itk.vector_container_from_array(final_mesh.flatten()))
 
 w1 = itk.MeshFileWriter[type(rigidRegisteredPoints)].New()
-w1.SetFileName('rigidRegisteredPoints.vtk')
+w1.SetFileName(FIXED_MESH_FILE.split('/')[-1].split('.')[0]+'_rigidRegisteredPoints.vtk')
 w1.SetFileTypeAsBINARY()
 w1.SetInput(rigidRegisteredPoints)
 w1.Update()
@@ -486,7 +511,7 @@ mesh_moving = itk.transform_mesh_filter(
         mesh_moving, transform=second_transform)
 
 w1 = itk.MeshFileWriter[type(mesh_moving)].New()
-w1.SetFileName('movingMeshRigidRegistered.vtk')
+w1.SetFileName(FIXED_MESH_FILE.split('/')[-1].split('.')[0]+'_movingMeshRigidRegistered.vtk')
 w1.SetFileTypeAsBINARY()
 w1.SetInput(mesh_moving)
 w1.Update()
@@ -577,7 +602,7 @@ transformInitializer.SetTransformDomainMeshSize(
 transformInitializer.InitializeTransform()
 
 # Registration Loop
-numOfIterations = 5000
+numOfIterations = 2500
 maxStep = 0.2
 learningRate = 0.2
 
@@ -654,8 +679,29 @@ movingMesh = itk.transform_mesh_filter(
         movingMesh, transform=final_transform)
 
 w1 = itk.MeshFileWriter[type(movingMesh)].New()
-w1.SetFileName('movingMeshFinalRegistered.vtk')
+w1.SetFileName(FIXED_MESH_FILE.split('/')[-1].split('.')[0]+'_movingMeshFinalRegistered.vtk')
 w1.SetFileTypeAsBINARY()
 w1.SetInput(movingMesh)
 w1.Update()
 
+
+print('Calculating distance between landmarks')
+movingLandmarkMesh = itk.transform_mesh_filter(
+        movingLandmarkMesh, transform=first_transform)
+
+movingLandmarkMesh = itk.transform_mesh_filter(
+        movingLandmarkMesh, transform=second_transform)
+
+movingLandmarkMesh = itk.transform_mesh_filter(
+        movingLandmarkMesh, transform=final_transform)
+
+moving_landmark_points = itk.array_from_vector_container(movingLandmarkMesh.GetPoints())
+fixed_landmark_points = itk.array_from_vector_container(fixedLandmarkMesh.GetPoints())
+
+np.save('moving_landmark.npy', moving_landmark_points)
+np.save('fixed_landmark.npy', fixed_landmark_points)
+
+# Get the difference between the landmarks
+diff = np.square(moving_landmark_points - fixed_landmark_points)
+diff = np.sqrt(np.sum(diff, 1))
+np.save('diff_landmark.npy', diff)
