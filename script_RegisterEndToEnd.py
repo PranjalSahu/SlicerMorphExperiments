@@ -209,7 +209,7 @@ itk_meshes = [itk.meshread(path, pixel_type=itk.D) for path in vtk_paths]
 
 
 # Convert meshes to images for performing moment based initialization
-print("Starting moment based initialization")
+#print("Starting moment based initialization")
 itk_transformed_meshes = []
 
 itk_images = []
@@ -273,7 +273,7 @@ movingLandmarkMesh = itk_transformed_landmarks[1]
 np.save('fixedMesh_landmarks.npy', itk.array_from_vector_container(fixedLandmarkMesh.GetPoints()))
 np.save('movingMesh_landmarks.npy', itk.array_from_vector_container(movingLandmarkMesh.GetPoints()))
 
-print("Completed moment based initialization")
+#print("Completed moment based initialization")
 
 #exit(0)
 # For performing RANSAC in parallel
@@ -333,7 +333,7 @@ def final_iteration(fixedPoints, movingPoints, transform_type):
     #optimizer.AddObserver(itk.IterationEvent(), print_iteration)
     optimizer.StartOptimization()
 
-    print("Final Value ", metric.GetValue())
+    print("Distance after Refinement ", metric.GetValue())
 
     # Get the correct transform and perform the final alignment
     current_transform = metric.GetMovingTransform().GetInverseTransform()
@@ -480,7 +480,7 @@ def ransac_icp_parallel(
     results = sorted(results)
 
     # Transform the points using the best returned transform
-    print(results[0][0], results[0][1])
+    #print(results[0][0], results[0][1])
     final_result = process(
         results[0][1], mesh_sub_sample_points, number_of_ransac_points, 1
     )
@@ -488,7 +488,7 @@ def ransac_icp_parallel(
     return final_result, results[0]
 
 
-print("Starting Ransac")
+#print("Starting Ransac")
 import time
 
 number_of_iterations = 2000
@@ -505,16 +505,11 @@ fixedMesh_vtk = readvtk(fixedMeshPath)
 
 movingMeshAllPoints = numpy_support.vtk_to_numpy(movingMesh_vtk.GetPoints().GetData())
 
-# Sub-Sample the points for ransac
-movingMeshPoints_ransac = subsample_points_poisson(movingMesh_vtk, radius=11.5)
-fixedMeshPoints_ransac = subsample_points_poisson(fixedMesh_vtk, radius=11.5)
-
 # Sub-Sample the points for rigid refinement and deformable registration
 movingMeshPoints = subsample_points_poisson(movingMesh_vtk, radius=5.5)
 fixedMeshPoints = subsample_points_poisson(fixedMesh_vtk, radius=5.5)
 
 print(movingMeshPoints.shape, fixedMeshPoints.shape)
-print(movingMeshPoints_ransac.shape, fixedMeshPoints_ransac.shape)
 
 def orient_points(input_points, x, y, z):
     '''
@@ -548,7 +543,6 @@ for x in [-1, 1]:
                 best_value = value
                 best_orientation = [x, y, z]
 
-movingMeshPoints_ransac = orient_points(movingMeshPoints_ransac, best_orientation[0], best_orientation[1], best_orientation[2])
 movingMeshPoints = orient_points(movingMeshPoints, best_orientation[0], best_orientation[1], best_orientation[2])
 
 # w1 = itk.MeshFileWriter[type(scaledMovingMesh)].New()
@@ -557,10 +551,11 @@ movingMeshPoints = orient_points(movingMeshPoints, best_orientation[0], best_ori
 # w1.SetInput(scaledMovingMesh)
 # w1.Update()
 
-np.save('movingMeshPoints.npy', movingMeshPoints)
-np.save('fixedMeshPoints.npy', fixedMeshPoints)
-#exit(0)
+np.save("/data/Apedata/Outputs/" + casename + '_movingMeshPoints.npy', movingMeshPoints)
+np.save("/data/Apedata/Outputs/" + casename + '_fixedMeshPoints.npy', fixedMeshPoints)
 
+before_ransac_distance = get_euclidean_distance(fixedMeshPoints, movingMeshPoints)
+print('Distance before Ransac ', before_ransac_distance)
 # Perform Initial alignment using Ransac parallel iterations
 start_time = time.time()
 transform_type = 2
@@ -576,15 +571,17 @@ itk_transformed_points, transform_matrix = ransac_icp_parallel(
 )
 end_time = time.time()
 
+print('Distance after Ransac ', transform_matrix[0])
 print(end_time - start_time)
-# print('itk_transformed_points shape ', itk_transformed_points.shape)
 
-print("Completed Ransac")
-
-# For taking care of a bug in the code
-first_transform = transform_matrix[2]
-first_transform[0]["transformType"] = "D"
-first_transform = itk.transform_from_dict(first_transform)
+if transform_matrix[0] > before_ransac_distance:
+    first_transform  = itk.IdentityTransform.D3.New()
+    itk_transformed_points = movingMeshPoints
+else:
+    # For taking care of a bug in the code
+    first_transform = transform_matrix[2]
+    first_transform[0]["transformType"] = "D"
+    first_transform = itk.transform_from_dict(first_transform)
 
 # Apply the transformation matrix to larger set of points
 # itk_transformed_points = itk.Mesh.D3.New()
@@ -592,7 +589,7 @@ first_transform = itk.transform_from_dict(first_transform)
 # itk_transformed_points = itk.transform_mesh_filter(itk_transformed_points, transform=first_transform)
 # itk_transformed_points = itk.array_from_vector_container(itk_transformed_points.GetPoints())
 
-print("Starting Rigid Refinement")
+#print("Starting Rigid Refinement")
 # Perform final alignment using the Euler3DTransform
 transform_type = 0
 final_mesh_points, second_transform = final_iteration(
@@ -625,7 +622,7 @@ w1.SetFileTypeAsBINARY()
 w1.SetInput(mesh_moving)
 w1.Update()
 
-print("Completed Rigid Refinement")
+#print("Completed Rigid Refinement")
 
 #exit(0)
 # In[112]:
@@ -714,7 +711,7 @@ transformInitializer.SetTransformDomainMeshSize(
 transformInitializer.InitializeTransform()
 
 # Registration Loop
-numOfIterations = 2000
+numOfIterations = 5000
 maxStep = 0.1
 learningRate = 0.1
 
@@ -747,7 +744,7 @@ def iteration_update():
 
 iteration_command = itk.PyCommand.New()
 iteration_command.SetCommandCallable(iteration_update)
-optimizer.AddObserver(itk.IterationEvent(), iteration_command)
+#optimizer.AddObserver(itk.IterationEvent(), iteration_command)
 
 optimizer.StartOptimization()
 
@@ -794,16 +791,27 @@ w1.SetFileTypeAsBINARY()
 w1.SetInput(movingMesh)
 w1.Update()
 
+# Write the fixed mesh also
+fixedMesh = itk.meshread('fixedMesh.vtk')
+w1 = itk.MeshFileWriter[type(fixedMesh)].New()
+w1.SetFileName("/data/Apedata/Outputs/" + casename + "_fixedMesh.vtk")
+w1.SetFileTypeAsBINARY()
+w1.SetInput(fixedMesh)
+w1.Update()
+
 
 print("Calculating distance between landmarks")
+# ransac transform
 movingLandmarkMesh = itk.transform_mesh_filter(
     movingLandmarkMesh, transform=first_transform
 )
 
+# refinement transform
 movingLandmarkMesh = itk.transform_mesh_filter(
     movingLandmarkMesh, transform=second_transform
 )
 
+# deformable transform
 movingLandmarkMesh = itk.transform_mesh_filter(
     movingLandmarkMesh, transform=final_transform
 )
