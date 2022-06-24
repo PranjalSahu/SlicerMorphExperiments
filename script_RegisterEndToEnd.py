@@ -270,12 +270,6 @@ w1.Update()
 fixedLandmarkMesh = itk_transformed_landmarks[0]
 movingLandmarkMesh = itk_transformed_landmarks[1]
 
-np.save('fixedMesh_landmarks.npy', itk.array_from_vector_container(fixedLandmarkMesh.GetPoints()))
-np.save('movingMesh_landmarks.npy', itk.array_from_vector_container(movingLandmarkMesh.GetPoints()))
-
-#print("Completed moment based initialization")
-
-#exit(0)
 # For performing RANSAC in parallel
 
 from vtk.util import numpy_support
@@ -506,8 +500,11 @@ fixedMesh_vtk = readvtk(fixedMeshPath)
 movingMeshAllPoints = numpy_support.vtk_to_numpy(movingMesh_vtk.GetPoints().GetData())
 
 # Sub-Sample the points for rigid refinement and deformable registration
-movingMeshPoints = subsample_points_poisson(movingMesh_vtk, radius=5.5)
-fixedMeshPoints = subsample_points_poisson(fixedMesh_vtk, radius=5.5)
+# radius = 5.5 for gorilla
+# radius = 4.5 for Pan
+# radius = 4 for Pongo
+movingMeshPoints = subsample_points_poisson(movingMesh_vtk, radius=4.5)
+fixedMeshPoints = subsample_points_poisson(fixedMesh_vtk, radius=4.5)
 
 print(movingMeshPoints.shape, fixedMeshPoints.shape)
 
@@ -543,13 +540,13 @@ for x in [-1, 1]:
                 best_value = value
                 best_orientation = [x, y, z]
 
+# Orient the sub-sampled points and landmark points for the moving mesh
 movingMeshPoints = orient_points(movingMeshPoints, best_orientation[0], best_orientation[1], best_orientation[2])
+orient_points_in_mesh(movingLandmarkMesh, best_orientation[0], best_orientation[1], best_orientation[2])
 
-# w1 = itk.MeshFileWriter[type(scaledMovingMesh)].New()
-# w1.SetFileName("movingMesh_scaled.vtk")
-# w1.SetFileTypeAsBINARY()
-# w1.SetInput(scaledMovingMesh)
-# w1.Update()
+
+np.save("/data/Apedata/Outputs/" + casename + '_fixedMesh_landmarks.npy', itk.array_from_vector_container(fixedLandmarkMesh.GetPoints()))
+np.save("/data/Apedata/Outputs/" + casename + '_movingMesh_landmarks.npy', itk.array_from_vector_container(movingLandmarkMesh.GetPoints()))
 
 np.save("/data/Apedata/Outputs/" + casename + '_movingMeshPoints.npy', movingMeshPoints)
 np.save("/data/Apedata/Outputs/" + casename + '_fixedMeshPoints.npy', fixedMeshPoints)
@@ -769,14 +766,16 @@ print("Euclidean Metric After TSD Deformable Registration ", e_metric.GetValue()
 
 
 # Write the Displacement Field
-convertFilter = itk.TransformToDisplacementFieldFilter.IVF33D.New()
-convertFilter.SetTransform(final_transform)
-convertFilter.UseReferenceImageOn()
-convertFilter.SetReferenceImage(fixedImage)
-convertFilter.Update()
-field = convertFilter.GetOutput()
-field = np.array(field)
-np.save("displacement_field.npy", field)
+write_displacement_field = False
+if write_displacement_field:
+    convertFilter = itk.TransformToDisplacementFieldFilter.IVF33D.New()
+    convertFilter.SetTransform(final_transform)
+    convertFilter.UseReferenceImageOn()
+    convertFilter.SetReferenceImage(fixedImage)
+    convertFilter.Update()
+    field = convertFilter.GetOutput()
+    field = np.array(field)
+    np.save("displacement_field.npy", field)
 
 
 # Write the final registered mesh
