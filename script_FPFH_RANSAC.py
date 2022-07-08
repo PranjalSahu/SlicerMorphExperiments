@@ -888,24 +888,48 @@ np.save("/data/Apedata/Outputs_RANSAC/" + casename + '_movingMesh_landmarks.npy'
 np.save("/data/Apedata/Outputs_RANSAC/" + casename + '_movingMeshPoints.npy', movingMeshPoints)
 np.save("/data/Apedata/Outputs_RANSAC/" + casename + '_fixedMeshPoints.npy', fixedMeshPoints)
 
-et = 0.1
-div = 3
-nneighbors = 14 # (voxel_size * 2)
-rad = 35        # (voxel_size * 5)
-
 # Extract FPFH feature
+import open3d as o3d
 
-fpfh = FPFH(et, div, nneighbors, rad)
-pcS = np.expand_dims(A_xyz.T, -1)
-normS, indS = fpfh.calc_normals(pcS)
-normS = fixedMeshPointNormals
-A_feats = fpfh.calcHistArray(A_xyz.T, normS, indS)
+def extract_open3d_fpfh(pcd, voxel_size):
+    radius_normal = voxel_size * 2
+    pcd.estimate_normals(
+        o3d.geometry.KDTreeSearchParamHybrid(radius=radius_normal, max_nn=30))
 
-fpfh = FPFH(et, div, nneighbors, rad)
-pcS = np.expand_dims(B_xyz.T, -1)
-normS, indS = fpfh.calc_normals(pcS)
-normS = movingMeshPointNormals
-B_feats = fpfh.calcHistArray(B_xyz.T, normS, indS)
+    radius_feature = voxel_size * 5
+    fpfh = o3d.pipelines.registration.compute_fpfh_feature(
+        pcd,
+        o3d.geometry.KDTreeSearchParamHybrid(radius=radius_feature,
+                                             max_nn=100))
+    return np.array(fpfh.data).T
+
+if True:
+    et = 0.1
+    div = 3
+    nneighbors = 50 # (voxel_size * 2)
+    rad = 35        # (voxel_size * 5)
+
+    fpfh = FPFH(et, div, nneighbors, rad)
+    pcS = np.expand_dims(A_xyz.T, -1)
+    normS, indS = fpfh.calc_normals(pcS)
+    normS = fixedMeshPointNormals
+    A_feats = fpfh.calcHistArray(A_xyz.T, normS, indS)
+
+    fpfh = FPFH(et, div, nneighbors, rad)
+    pcS = np.expand_dims(B_xyz.T, -1)
+    normS, indS = fpfh.calc_normals(pcS)
+    normS = movingMeshPointNormals
+    B_feats = fpfh.calcHistArray(B_xyz.T, normS, indS)
+else:
+    VOXEL_SIZE = 7
+    A_pcd_raw = o3d.geometry.PointCloud()
+    A_pcd_raw.points = o3d.utility.Vector3dVector(fixedMeshPoints)
+    B_pcd_raw = o3d.geometry.PointCloud()
+    B_pcd_raw.points = o3d.utility.Vector3dVector(movingMeshPoints)
+    A_pcd = A_pcd_raw
+    B_pcd = B_pcd_raw
+    A_feats = extract_open3d_fpfh(A_pcd, VOXEL_SIZE)
+    B_feats = extract_open3d_fpfh(B_pcd, VOXEL_SIZE)
 
 print(A_feats.shape, B_feats.shape)
 
@@ -958,6 +982,7 @@ transform_matrix, index, value = ransac_icp_parallel_vtk(movingMeshPoints = A_co
                                                     transform_type = 3,
                                                     inlier_value = 25)
 
+print('Best Combination ', index, value)
 transform_matrix = itk.transform_from_dict(transform_matrix)
 
 
