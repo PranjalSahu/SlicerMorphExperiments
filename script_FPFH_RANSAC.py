@@ -864,8 +864,8 @@ fixedMesh_vtk = readvtk(fixedMeshPath)
 # radius = 5.5 for gorilla
 # radius = 4.5 for Pan
 # radius = 4 for Pongo
-movingMeshPoints = subsample_points_poisson(movingMesh_vtk, radius=5.5)
-fixedMeshPoints  = subsample_points_poisson(fixedMesh_vtk, radius=5.5)
+movingMeshPoints = subsample_points_poisson(movingMesh_vtk, radius=5)
+fixedMeshPoints  = subsample_points_poisson(fixedMesh_vtk, radius=5)
 
 
 #vtk_points_to_numpy(movingMeshPoints_vtk)
@@ -917,12 +917,14 @@ def vtk_points_to_numpy(input_vtk_points):
     return input_vtk_points
 
 # Move it below if using VTK Normals
-movingMeshPointNormals = getnormals_pcl(movingMeshPoints)
-fixedMeshPointNormals = getnormals_pcl(fixedMeshPoints)
+#movingMeshPointNormals = getnormals_pcl(movingMeshPoints)
+#fixedMeshPointNormals = getnormals_pcl(fixedMeshPoints)
 
 movingMeshPoints = numpy_to_vtk_polydata(movingMeshPoints)
 fixedMeshPoints = numpy_to_vtk_polydata(fixedMeshPoints)
 
+movingMeshPointNormals = getnormals_pca(movingMeshPoints)
+fixedMeshPointNormals = getnormals_pca(fixedMeshPoints)
 
 
 print(movingMeshPointNormals.shape, fixedMeshPointNormals.shape)
@@ -963,7 +965,7 @@ def extract_open3d_fpfh(pcd, voxel_size):
 if True:
     et = 0.1
     div = 3
-    nneighbors = 25 # (voxel_size * 2)
+    nneighbors = 5 # (voxel_size * 2) if radius
     rad = 35        # (voxel_size * 5)
 
     fpfh = FPFH(et, div, nneighbors, rad)
@@ -1037,7 +1039,7 @@ transform_matrix, index, value = ransac_icp_parallel_vtk(movingMeshPoints = A_co
                                                     mesh_sub_sample_points = 500,
                                                     number_of_ransac_points = 250, 
                                                     transform_type = 3,
-                                                    inlier_value = 25)
+                                                    inlier_value = 15)
 
 print('Best Combination ', index, value)
 transform_matrix = itk.transform_from_dict(transform_matrix)
