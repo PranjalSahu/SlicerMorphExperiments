@@ -384,14 +384,12 @@ def readvtk(filename):
     m1 = a.GetOutput()
     return m1
 
-
 def readply(filename):
     a = vtk.vtkPLYReader()
     a.SetFileName(filename)
     a.Update()
     m1 = a.GetOutput()
     return m1
-
 
 def read_landmarks(filename):
     """
@@ -554,6 +552,7 @@ itk_transformed_landmarks = [
 fixedMesh = itk_transformed_meshes[0]
 movingMesh = itk_transformed_meshes[1]
 
+# Write the cleaned Moment Initialized meshes
 movingMeshPath = "/data/Apedata/Outputs_RANSAC/" + casename + "_movingMesh.vtk"
 fixedMeshPath = "/data/Apedata/Outputs_RANSAC/" + casename + "_fixedMesh.vtk"
 
@@ -586,6 +585,15 @@ def getnormals(inputmesh):
     normals.Update()
     return normals.GetOutput()
 
+def getnormals_pca(movingMesh):
+    normals = vtk.vtkPCANormalEstimation()
+    normals.SetSampleSize(10)
+    normals.SetFlipNormals(True)
+    normals.SetNormalOrientationToPoint()
+    normals.SetInputData(movingMesh)
+    normals.Update()
+    as_numpy = numpy_support.vtk_to_numpy(normals.GetOutput().GetPointData().GetArray(0))
+    return as_numpy
 
 ''' 
     Extracts the normal data from the sampled points
@@ -804,7 +812,6 @@ def ransac_icp_parallel_vtk(movingMeshPoints, fixedMeshPoints,
     
     return final_result, index, value
 
-
 def orient_points(input_points, x, y, z):
     '''
         Orients the input points based on the x, y and z orientations given.
@@ -833,22 +840,16 @@ transform_type = 0
 movingMesh_vtk = readvtk(movingMeshPath)
 fixedMesh_vtk = readvtk(fixedMeshPath)
 
-movingMeshNormals = getnormals(movingMesh_vtk)
-fixedMeshNormals = getnormals(fixedMesh_vtk)
-
 # Sub-Sample the points for rigid refinement and deformable registration
 # radius = 5.5 for gorilla
 # radius = 4.5 for Pan
 # radius = 4 for Pongo
-movingMeshPoints = subsample_points_poisson_polydata(movingMeshNormals, radius=5.5)
-fixedMeshPoints  = subsample_points_poisson_polydata(fixedMeshNormals, radius=5.5)
+movingMeshPoints = subsample_points_poisson(movingMesh_vtk, radius=5.5)
+fixedMeshPoints  = subsample_points_poisson(fixedMesh_vtk, radius=5.5)
 
 
-# Obtain normals from the sub-sampled points
-movingMeshPoints, movingMeshPointNormals = extract_normal_from_tuple(movingMeshPoints)
-fixedMeshPoints, fixedMeshPointNormals = extract_normal_from_tuple(fixedMeshPoints)
-
-
+#vtk_points_to_numpy(movingMeshPoints_vtk)
+# Orient the points
 best_value = 5000
 best_points = None
 best_orientation = [1, 1, 1]
@@ -867,14 +868,47 @@ for x in [-1, 1]:
 # Orient the sub-sampled points and landmark points for the moving mesh
 movingMeshPoints = orient_points(movingMeshPoints, best_orientation[0], best_orientation[1], best_orientation[2])
 orient_points_in_mesh(movingLandmarkMesh, best_orientation[0], best_orientation[1], best_orientation[2])
-
-
 orient_points_in_mesh(movingMesh, best_orientation[0], best_orientation[1], best_orientation[2])
+
 w1 = itk.MeshFileWriter[type(movingMesh)].New()
 w1.SetFileName(movingMeshPath.replace('movingMesh', 'movingMeshOriented'))
 w1.SetFileTypeAsBINARY()
 w1.SetInput(movingMesh)
 w1.Update()
+
+# Convert from numpy to vtk points
+def numpy_to_vtk_points(input_points):
+    vtk_points = vtk.vtkPoints()
+    vtk_points.SetData(numpy_support.numpy_to_vtk(input_points, deep=True))
+    return vtk_points
+
+# Convert from numpy to vtkPolyData
+def numpy_to_vtk_polydata(input_points):
+    vtk_polydata = vtk.vtkPolyData()
+    vtk_points = numpy_to_vtk_points(input_points)
+    vtk_polydata.SetPoints(vtk_points)
+    return vtk_polydata
+
+# Convert from vtk points to numpy
+def vtk_points_to_numpy(input_vtk_points):
+    input_vtk_points = input_vtk_points.GetPoints()
+    input_vtk_points = input_vtk_points.GetData()
+    input_vtk_points = numpy_support.vtk_to_numpy(input_vtk_points)
+    return input_vtk_points
+
+movingMeshPoints = numpy_to_vtk_polydata(movingMeshPoints)
+fixedMeshPoints = numpy_to_vtk_polydata(fixedMeshPoints)
+
+movingMeshPointNormals = getnormals_pca(movingMeshPoints)
+fixedMeshPointNormals = getnormals_pca(fixedMeshPoints)
+
+movingMeshPoints = vtk_points_to_numpy(movingMeshPoints)
+fixedMeshPoints = vtk_points_to_numpy(fixedMeshPoints)
+
+# Obtain normals from the sub-sampled points
+#movingMeshPoints, movingMeshPointNormals = extract_normal_from_tuple(movingMeshPoints)
+#fixedMeshPoints, fixedMeshPointNormals = extract_normal_from_tuple(fixedMeshPoints)
+
 
 A_xyz = fixedMeshPoints.T
 B_xyz = movingMeshPoints.T
@@ -906,18 +940,18 @@ def extract_open3d_fpfh(pcd, voxel_size):
 if True:
     et = 0.1
     div = 3
-    nneighbors = 50 # (voxel_size * 2)
+    nneighbors = 25 # (voxel_size * 2)
     rad = 35        # (voxel_size * 5)
 
     fpfh = FPFH(et, div, nneighbors, rad)
     pcS = np.expand_dims(A_xyz.T, -1)
-    normS, indS = fpfh.calc_normals(pcS)
+    _, indS = fpfh.calc_normals(pcS)
     normS = fixedMeshPointNormals
     A_feats = fpfh.calcHistArray(A_xyz.T, normS, indS)
 
     fpfh = FPFH(et, div, nneighbors, rad)
     pcS = np.expand_dims(B_xyz.T, -1)
-    normS, indS = fpfh.calc_normals(pcS)
+    _, indS = fpfh.calc_normals(pcS)
     normS = movingMeshPointNormals
     B_feats = fpfh.calcHistArray(B_xyz.T, normS, indS)
 else:
@@ -980,7 +1014,7 @@ transform_matrix, index, value = ransac_icp_parallel_vtk(movingMeshPoints = A_co
                                                     mesh_sub_sample_points = 500,
                                                     number_of_ransac_points = 250, 
                                                     transform_type = 3,
-                                                    inlier_value = 25)
+                                                    inlier_value = 35)
 
 print('Best Combination ', index, value)
 transform_matrix = itk.transform_from_dict(transform_matrix)

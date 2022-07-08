@@ -3,7 +3,7 @@ import glob
 
 # Gorilla cases
 allnames = [
-    #"USNM582726",
+    "USNM582726",
     "USNM590951",
     "USNM599165",
     "USNM590953",
@@ -26,7 +26,7 @@ allnames = [
     "USNM174722",
 ]
 
-allnames = ["USNM174722"]
+allnames = ["USNM590954"]
 # # bad result cases
 # badcases = ['USNM582726']
 # # failed cases
