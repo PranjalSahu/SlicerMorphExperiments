@@ -17,6 +17,8 @@ from joblib import Parallel, delayed
 import time
 import copy
 
+import open3d as o3d
+
 from vtk.util import numpy_support
 from vtk.util.numpy_support import numpy_to_vtk
 
@@ -226,21 +228,28 @@ class FPFH(object):
 
     def calcHistArray(self, pc, norm, indNeigh):
         """Overriding base PFH to FPFH"""
+        from numpy import linalg as LA
 
         print("\tCalculating histograms fast method \n")
         N = len(pc)
         histArray = np.zeros((N, self._div**3))
         distArray = np.zeros((self._nneighbors))
         distList = []
+
+        # Loop over points
         for i in range(N):
             u = np.asarray(norm[i].T).squeeze()
-
             features = np.zeros((len(indNeigh[i]), 3))
+
+            # Loop over neighbours
             for j in range(len(indNeigh[i])):
                 pi = pc[i]
                 pj = pc[indNeigh[i][j]]
-                if np.arccos(np.dot(norm[i], pj - pi)) <= np.arccos(
-                        np.dot(norm[j], pi - pj)):
+
+                norm_value = LA.norm(pj -pi)
+
+                if np.arccos(np.dot(norm[i], pj - pi)/norm_value) <= np.arccos(
+                        np.dot(norm[j], pi - pj)/norm_value):
                     ps = pi
                     pt = pj
                     ns = np.asarray(norm[i]).squeeze()
@@ -595,6 +604,17 @@ def getnormals_pca(movingMesh):
     as_numpy = numpy_support.vtk_to_numpy(normals.GetOutput().GetPointData().GetArray(0))
     return as_numpy
 
+# Get normals using the PCL library
+def getnormals_pcl(inputPoints):
+    A_pcd = o3d.geometry.PointCloud()
+    A_pcd.points = o3d.utility.Vector3dVector(inputPoints)
+
+    voxel_size = 7
+    radius_normal = voxel_size * 2
+    A_pcd.estimate_normals(
+        o3d.geometry.KDTreeSearchParamHybrid(radius=radius_normal, max_nn=30))
+    return np.array(A_pcd.normals)
+
 ''' 
     Extracts the normal data from the sampled points
 '''
@@ -896,11 +916,16 @@ def vtk_points_to_numpy(input_vtk_points):
     input_vtk_points = numpy_support.vtk_to_numpy(input_vtk_points)
     return input_vtk_points
 
+# Move it below if using VTK Normals
+movingMeshPointNormals = getnormals_pcl(movingMeshPoints)
+fixedMeshPointNormals = getnormals_pcl(fixedMeshPoints)
+
 movingMeshPoints = numpy_to_vtk_polydata(movingMeshPoints)
 fixedMeshPoints = numpy_to_vtk_polydata(fixedMeshPoints)
 
-movingMeshPointNormals = getnormals_pca(movingMeshPoints)
-fixedMeshPointNormals = getnormals_pca(fixedMeshPoints)
+
+
+print(movingMeshPointNormals.shape, fixedMeshPointNormals.shape)
 
 movingMeshPoints = vtk_points_to_numpy(movingMeshPoints)
 fixedMeshPoints = vtk_points_to_numpy(fixedMeshPoints)
@@ -922,9 +947,7 @@ np.save("/data/Apedata/Outputs_RANSAC/" + casename + '_movingMesh_landmarks.npy'
 np.save("/data/Apedata/Outputs_RANSAC/" + casename + '_movingMeshPoints.npy', movingMeshPoints)
 np.save("/data/Apedata/Outputs_RANSAC/" + casename + '_fixedMeshPoints.npy', fixedMeshPoints)
 
-# Extract FPFH feature
-import open3d as o3d
-
+# For Extract FPFH feature
 def extract_open3d_fpfh(pcd, voxel_size):
     radius_normal = voxel_size * 2
     pcd.estimate_normals(
@@ -1014,7 +1037,7 @@ transform_matrix, index, value = ransac_icp_parallel_vtk(movingMeshPoints = A_co
                                                     mesh_sub_sample_points = 500,
                                                     number_of_ransac_points = 250, 
                                                     transform_type = 3,
-                                                    inlier_value = 35)
+                                                    inlier_value = 25)
 
 print('Best Combination ', index, value)
 transform_matrix = itk.transform_from_dict(transform_matrix)
