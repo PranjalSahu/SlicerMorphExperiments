@@ -596,9 +596,10 @@ def getnormals(inputmesh):
 
 def getnormals_pca(movingMesh):
     normals = vtk.vtkPCANormalEstimation()
-    normals.SetSampleSize(10)
+    normals.SetSampleSize(30)
     normals.SetFlipNormals(True)
-    normals.SetNormalOrientationToPoint()
+    #normals.SetNormalOrientationToPoint()
+    normals.SetNormalOrientationToGraphTraversal()
     normals.SetInputData(movingMesh)
     normals.Update()
     as_numpy = numpy_support.vtk_to_numpy(normals.GetOutput().GetPointData().GetArray(0))
@@ -608,8 +609,7 @@ def getnormals_pca(movingMesh):
 def getnormals_pcl(inputPoints):
     A_pcd = o3d.geometry.PointCloud()
     A_pcd.points = o3d.utility.Vector3dVector(inputPoints)
-
-    voxel_size = 7
+    voxel_size = 5
     radius_normal = voxel_size * 2
     A_pcd.estimate_normals(
         o3d.geometry.KDTreeSearchParamHybrid(radius=radius_normal, max_nn=30))
@@ -927,6 +927,10 @@ movingMeshPointNormals = getnormals_pca(movingMeshPoints)
 fixedMeshPointNormals = getnormals_pca(fixedMeshPoints)
 
 
+#movingMeshPointNormals = getnormals_pca(movingMeshPoints)
+#fixedMeshPointNormals = getnormals_pca(fixedMeshPoints)
+
+
 print(movingMeshPointNormals.shape, fixedMeshPointNormals.shape)
 
 movingMeshPoints = vtk_points_to_numpy(movingMeshPoints)
@@ -962,23 +966,49 @@ def extract_open3d_fpfh(pcd, voxel_size):
                                              max_nn=100))
     return np.array(fpfh.data).T
 
+# Old FPFH Code
+#if True:
+    # et = 0.1
+    # div = 3
+    # nneighbors = 15 # (voxel_size * 2) if radius
+    # rad = 25        # (voxel_size * 5)
+
+    # # Take nneighbors within the radius of rad
+    # fpfh = FPFH(et, div, nneighbors, rad)
+    # pcS = np.expand_dims(A_xyz.T, -1)
+    # _, indS = fpfh.calc_normals(pcS)
+    # normS = fixedMeshPointNormals
+    # A_feats = fpfh.calcHistArray(A_xyz.T, normS, indS)
+
+    # fpfh = FPFH(et, div, nneighbors, rad)
+    # pcS = np.expand_dims(B_xyz.T, -1)
+    # _, indS = fpfh.calc_normals(pcS)
+    # normS = movingMeshPointNormals
+    # B_feats = fpfh.calcHistArray(B_xyz.T, normS, indS)
+
+# New FPFH Code
 if True:
-    et = 0.1
-    div = 3
-    nneighbors = 5 # (voxel_size * 2) if radius
-    rad = 35        # (voxel_size * 5)
-
-    fpfh = FPFH(et, div, nneighbors, rad)
     pcS = np.expand_dims(A_xyz.T, -1)
-    _, indS = fpfh.calc_normals(pcS)
-    normS = fixedMeshPointNormals
-    A_feats = fpfh.calcHistArray(A_xyz.T, normS, indS)
+    normal_np_pcl = getnormals_pcl(pcS)
+    fpfh = itk.Fpfh.MyFilter.MF3MF3.New()
+    pointset = itk.PointSet[itk.F, 3].New()
+    pointset.SetPoints(itk.vector_container_from_array(pcS.flatten().astype('float32')))
+    normalset = itk.PointSet[itk.F, 3].New()
+    normalset.SetPoints(itk.vector_container_from_array(normal_np_pcl.flatten().astype('float32')))
+    result = fpfh.ComputeFPFHFeature(pointset, normalset, 25, 100)
+    A_feats = np.array(result)
+    A_feats = np.reshape(A_feats, [33, pointset.GetNumberOfPoints()]).T
 
-    fpfh = FPFH(et, div, nneighbors, rad)
     pcS = np.expand_dims(B_xyz.T, -1)
-    _, indS = fpfh.calc_normals(pcS)
-    normS = movingMeshPointNormals
-    B_feats = fpfh.calcHistArray(B_xyz.T, normS, indS)
+    normal_np_pcl = getnormals_pcl(pcS)
+    fpfh = itk.Fpfh.MyFilter.MF3MF3.New()
+    pointset = itk.PointSet[itk.F, 3].New()
+    pointset.SetPoints(itk.vector_container_from_array(pcS.flatten().astype('float32')))
+    normalset = itk.PointSet[itk.F, 3].New()
+    normalset.SetPoints(itk.vector_container_from_array(normal_np_pcl.flatten().astype('float32')))
+    result = fpfh.ComputeFPFHFeature(pointset, normalset, 25, 100)
+    B_feats = np.array(result)
+    B_feats = np.reshape(B_feats, [33, pointset.GetNumberOfPoints()]).T
 else:
     VOXEL_SIZE = 7
     A_pcd_raw = o3d.geometry.PointCloud()
@@ -990,7 +1020,7 @@ else:
     A_feats = extract_open3d_fpfh(A_pcd, VOXEL_SIZE)
     B_feats = extract_open3d_fpfh(B_pcd, VOXEL_SIZE)
 
-print(A_feats.shape, B_feats.shape)
+print('Feature shapes are ', A_feats.shape, B_feats.shape)
 
 # Establish correspondences by nearest neighbour search in feature space
 from scipy.spatial import cKDTree
@@ -1039,7 +1069,7 @@ transform_matrix, index, value = ransac_icp_parallel_vtk(movingMeshPoints = A_co
                                                     mesh_sub_sample_points = 500,
                                                     number_of_ransac_points = 250, 
                                                     transform_type = 3,
-                                                    inlier_value = 15)
+                                                    inlier_value = 20)
 
 print('Best Combination ', index, value)
 transform_matrix = itk.transform_from_dict(transform_matrix)
