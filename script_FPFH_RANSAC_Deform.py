@@ -29,7 +29,7 @@ FIXED_MESH_FILE = sys.argv[1]
 FIXED_LANDMARK_FILE = sys.argv[2]
 MOVING_MESH_FILE = sys.argv[3]
 MOVING_LANDMARK_FILE = sys.argv[4]
-WRITE_PATH = "/data/Apedata/Outputs_RANSAC/"
+WRITE_PATH = sys.argv[5]
 
 
 def get_euclidean_distance(input_fixedPoints, input_movingPoints):

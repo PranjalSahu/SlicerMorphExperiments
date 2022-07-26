@@ -81,6 +81,8 @@ animal_type = 'Gorilla'
 #template_landmark = "/data/Apedata/CorrectData/data/Pongo/landmarks/USNM588109_LM1.fcsv"
 #animal_type = "Pongo"
 
+write_path = "/data/Apedata/Outputs_RANSAC/"
+
 for name in allnames:
     print("====================================================")
     print("Registering ", name)
@@ -105,4 +107,6 @@ for name in allnames:
         + template_mesh
         + " "
         + template_landmark
+        + " "
+        + write_path
     )
