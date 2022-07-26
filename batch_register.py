@@ -26,7 +26,7 @@ allnames = [
     "USNM174722",
 ]
 
-allnames = ["USNM590954"]
+#allnames = ["USNM590954"]
 # # bad result cases
 # badcases = ['USNM582726']
 # # failed cases
