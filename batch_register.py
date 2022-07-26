@@ -97,7 +97,7 @@ for name in allnames:
     )[0]
 
     os.system(
-        "time python script_FPFH_RANSAC.py "
+        "time python script_FPFH_RANSAC_Deform.py "
         + meshfile
         + " "
         + landmarkfile
