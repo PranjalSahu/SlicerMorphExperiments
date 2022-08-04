@@ -13,17 +13,19 @@ import vtk
 import itk
 import math
 from joblib import Parallel, delayed
+import time
+import copy
+from vtk.util import numpy_support
+from vtk.util.numpy_support import numpy_to_vtk
+
 
 # Install Dependencies using
-# /home/pranjal.sahu/Downloads/Slicer-5.0.3-linux-amd64/bin/PythonSlicer -m pip install --prefix=/data/SlicerMorph/ITKALPACA-python-dependencies itk
+#/home/pranjal.sahu/Downloads/Slicer-5.0.3-linux-amd64/bin/PythonSlicer -m pip install --prefix=/data/SlicerMorph/ITKALPACA-python-dependencies itk==5.3rc4
+#/home/pranjal.sahu/Downloads/Slicer-5.0.3-linux-amd64/bin/PythonSlicer -m pip install --prefix=/data/SlicerMorph/ITKALPACA-python-dependencies joblib
 
 # from sklearn.preprocessing import scale 
 
-# import time
-# import copy
-# import time
-# from vtk.util import numpy_support
-# from vtk.util.numpy_support import numpy_to_vtk
+
 # from scipy.spatial import cKDTree
 
 def get_euclidean_distance(input_fixedPoints, input_movingPoints):
@@ -480,7 +482,8 @@ def process(target, source):
     vtk_meshes = list()
 
     for path in paths:
-        reader = vtk.vtkPLYReader()
+        print('Reading file ', path)
+        reader = vtk.vtkXMLPolyDataReader()
         reader.SetFileName(path)
         reader.Update()
 
@@ -511,8 +514,7 @@ def process(target, source):
 
     print('Scale length are  ', fixedlength, movinglength)
     scale_factor = fixedlength / movinglength
-    return
-
+    
     points = vtk_meshes[1].GetPoints()
     pointdata = points.GetData()
     points_as_numpy = numpy_support.vtk_to_numpy(pointdata)
@@ -523,110 +525,87 @@ def process(target, source):
     points2.SetData(vtk_data_array)
     vtk_meshes[1].SetPoints(points2)
 
+    # Write back out to a filetype supported by ITK
+    vtk_paths = [path.strip(".ply") + ".vtk" for path in paths]
+    for idx, mesh in enumerate(vtk_meshes):
+        writer = vtk.vtkPolyDataWriter()
+        writer.SetInputData(mesh)
+        writer.SetFileVersion(42)
+        writer.SetFileTypeToBinary()
+        writer.SetFileName(vtk_paths[idx])
+        writer.Update()
+
+    itk_meshes = [itk.meshread(path, pixel_type=itk.F) for path in vtk_paths]
+
+    # Zero center the meshes
+    itk_transformed_meshes = []
+    itk_transformed_landmarks= []
+    itk_images = []
+    for i, mesh in enumerate(itk_meshes):
+        # Make all the points to positive coordinates
+        mesh_points = itk.array_from_vector_container(mesh.GetPoints())
+        m = np.min(mesh_points, 0)# - np.array([5, 5, 5], dtype=mesh_points.dtype)
+        mesh_points = mesh_points - m
+        mesh.SetPoints(itk.vector_container_from_array(mesh_points.flatten()))
+        itk_transformed_meshes.append(mesh)
+
+    fixedMesh = itk_transformed_meshes[0]
+    movingMesh = itk_transformed_meshes[1]
+
+    # Write the cleaned Moment Initialized meshes
+    movingMeshPath = './' + casename + "_movingMesh.vtk"
+    fixedMeshPath = './' + casename + "_fixedMesh.vtk"
+
+    write_itk_mesh(fixedMesh, fixedMeshPath)
+    write_itk_mesh(movingMesh, movingMeshPath)
+
+    # For performing RANSAC in parallel
+    number_of_iterations = 50000
+    number_of_ransac_points = 250
+    inlier_value = 25
+    transform_type = 0
+
+    movingMesh_vtk = readvtk(movingMeshPath)
+    fixedMesh_vtk = readvtk(fixedMeshPath)
+
+    # Sub-Sample the points for rigid refinement and deformable registration
+    # radius = 5.5 for gorilla
+    # radius = 4.5 for Pan
+    # radius = 4 for Pongo
+    movingMeshPoints = subsample_points_poisson(movingMesh_vtk, radius=5)
+    fixedMeshPoints  = subsample_points_poisson(fixedMesh_vtk, radius=5)
+
+    movingMeshPoints = numpy_to_vtk_polydata(movingMeshPoints)
+    fixedMeshPoints = numpy_to_vtk_polydata(fixedMeshPoints)
+
+    movingMeshPointNormals = getnormals_pca(movingMeshPoints)
+    fixedMeshPointNormals = getnormals_pca(fixedMeshPoints)
+
+    movingMeshPoints = vtk_points_to_numpy(movingMeshPoints)
+    fixedMeshPoints = vtk_points_to_numpy(fixedMeshPoints)
+
+    # # Obtain normals from the sub-sampled points
+    # #movingMeshPoints, movingMeshPointNormals = extract_normal_from_tuple(movingMeshPoints)
+    # #fixedMeshPoints, fixedMeshPointNormals = extract_normal_from_tuple(fixedMeshPoints)
+
+    fixed_xyz = fixedMeshPoints.T
+    moving_xyz = movingMeshPoints.T
+
     return
-    # # Write back out to a filetype supported by ITK
-    # vtk_paths = [path.strip(".ply") + ".vtk" for path in paths]
-    # for idx, mesh in enumerate(vtk_meshes):
-    #     writer = vtk.vtkPolyDataWriter()
-    #     writer.SetInputData(mesh)
-    #     writer.SetFileVersion(42)
-    #     writer.SetFileTypeToBinary()
-    #     writer.SetFileName(vtk_paths[idx])
-    #     writer.Update()
+    # np.save(WRITE_PATH + casename + '_fixedMesh_landmarks.npy', itk.array_from_vector_container(fixedLandmarkMesh.GetPoints()))
+    # np.save(WRITE_PATH + casename + '_movingMesh_landmarks.npy', itk.array_from_vector_container(movingLandmarkMesh.GetPoints()))
 
-# itk_meshes = [itk.meshread(path, pixel_type=itk.F) for path in vtk_paths]
+    # np.save(WRITE_PATH + casename + '_movingMeshPoints.npy', movingMeshPoints)
+    # np.save(WRITE_PATH + casename + '_fixedMeshPoints.npy', fixedMeshPoints)
 
-# # Zero center the meshes
-# itk_transformed_meshes = []
-# itk_transformed_landmarks= []
-# itk_images = []
-# for i, mesh in enumerate(itk_meshes):
-#     # Make all the points to positive coordinates
-#     mesh_points = itk.array_from_vector_container(mesh.GetPoints())
-#     m = np.min(mesh_points, 0)# - np.array([5, 5, 5], dtype=mesh_points.dtype)
-#     mesh_points = mesh_points# - m
-#     mesh.SetPoints(itk.vector_container_from_array(mesh_points.flatten()))
+    # New FPFH Code
+    # pcS = np.expand_dims(fixed_xyz.T, -1)
+    # normal_np_pcl = fixedMeshPointNormals
+    # fixed_feats = get_fpfh_feature(pcS, normal_np_pcl, 25, 100)
 
-#     # Apply same subtraction to landmark points
-#     landmark_points = itk.array_from_vector_container(itk_landmarks[i].GetPoints())
-#     landmark_points = landmark_points# - m
-#     itk_landmarks[i].SetPoints(
-#         itk.vector_container_from_array(landmark_points.flatten())
-#     )
-
-#     itk_transformed_meshes.append(mesh)
-#     itk_transformed_landmarks.append(itk_landmarks[i])
-
-# fixedMesh = itk_transformed_meshes[0]
-# movingMesh = itk_transformed_meshes[1]
-
-# # Write the cleaned Moment Initialized meshes
-# movingMeshPath = WRITE_PATH + casename + "_movingMesh.vtk"
-# fixedMeshPath = WRITE_PATH + casename + "_fixedMesh.vtk"
-
-# write_itk_mesh(fixedMesh, fixedMeshPath)
-# write_itk_mesh(movingMesh, movingMeshPath)
-
-# fixedLandmarkMesh = itk_transformed_landmarks[0]
-# movingLandmarkMesh = itk_transformed_landmarks[1]
-
-# # For performing RANSAC in parallel
-# number_of_iterations = 50000
-# number_of_ransac_points = 250
-# inlier_value = 25
-# transform_type = 0
-
-# movingMesh_vtk = readvtk(movingMeshPath)
-# fixedMesh_vtk = readvtk(fixedMeshPath)
-
-# # Sub-Sample the points for rigid refinement and deformable registration
-# # radius = 5.5 for gorilla
-# # radius = 4.5 for Pan
-# # radius = 4 for Pongo
-# movingMeshPoints = subsample_points_poisson(movingMesh_vtk, radius=5)
-# fixedMeshPoints  = subsample_points_poisson(fixedMesh_vtk, radius=5)
-
-# print(movingMeshPoints)
-
-# movingMeshPoints = numpy_to_vtk_polydata(movingMeshPoints)
-# fixedMeshPoints = numpy_to_vtk_polydata(fixedMeshPoints)
-
-# print(movingMeshPoints)
-
-# movingMeshPointNormals = getnormals_pca(movingMeshPoints)
-# fixedMeshPointNormals = getnormals_pca(fixedMeshPoints)
-
-# print(movingMeshPointNormals)
-
-# movingMeshPoints = vtk_points_to_numpy(movingMeshPoints)
-# fixedMeshPoints = vtk_points_to_numpy(fixedMeshPoints)
-
-# print(movingMeshPoints)
-
-# # Obtain normals from the sub-sampled points
-# #movingMeshPoints, movingMeshPointNormals = extract_normal_from_tuple(movingMeshPoints)
-# #fixedMeshPoints, fixedMeshPointNormals = extract_normal_from_tuple(fixedMeshPoints)
-
-# fixed_xyz = fixedMeshPoints.T
-# moving_xyz = movingMeshPoints.T
-
-# print("fixed_xyz ", fixed_xyz.shape)
-# print("moving_xyz ", moving_xyz.shape)
-
-# np.save(WRITE_PATH + casename + '_fixedMesh_landmarks.npy', itk.array_from_vector_container(fixedLandmarkMesh.GetPoints()))
-# np.save(WRITE_PATH + casename + '_movingMesh_landmarks.npy', itk.array_from_vector_container(movingLandmarkMesh.GetPoints()))
-
-# np.save(WRITE_PATH + casename + '_movingMeshPoints.npy', movingMeshPoints)
-# np.save(WRITE_PATH + casename + '_fixedMeshPoints.npy', fixedMeshPoints)
-
-# # New FPFH Code
-# pcS = np.expand_dims(fixed_xyz.T, -1)
-# normal_np_pcl = fixedMeshPointNormals
-# fixed_feats = get_fpfh_feature(pcS, normal_np_pcl, 25, 100)
-
-# pcS = np.expand_dims(moving_xyz.T, -1)
-# normal_np_pcl = movingMeshPointNormals
-# moving_feats = get_fpfh_feature(pcS, normal_np_pcl, 25, 100)
+    # pcS = np.expand_dims(moving_xyz.T, -1)
+    # normal_np_pcl = movingMeshPointNormals
+    # moving_feats = get_fpfh_feature(pcS, normal_np_pcl, 25, 100)
 
 
 # # Establish correspondences by nearest neighbour search in feature space
