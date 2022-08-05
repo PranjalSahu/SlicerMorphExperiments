@@ -654,174 +654,167 @@ def process(target, source):
     write_itk_mesh(movingMesh_Rigid, WRITE_PATH + casename + "_movingMeshRigidRegistered.vtk")
 
     print("Completed Rigid Refinement")
-    return
+    
     # [STAR] Expectation Based PointSetToPointSetMetricv4 Registration
 
-# imageDiagonal = 100
+    imageDiagonal = 100
+    PixelType = itk.D
+    Dimension = 3
 
-# PixelType = itk.D
-# Dimension = 3
+    FixedImageType = itk.Image[PixelType, Dimension]
 
-# FixedImageType = itk.Image[PixelType, Dimension]
+    # Create PointSets for registration
+    movingPS = itk.PointSet[itk.D, Dimension].New()
+    fixedPS = itk.PointSet[itk.D, Dimension].New()
 
-# # Create PointSets for registration
-# movingPS = itk.PointSet[itk.D, Dimension].New()
-# fixedPS = itk.PointSet[itk.D, Dimension].New()
+    movingPS.SetPoints(itk.vector_container_from_array(final_mesh_points.flatten()))
+    fixedPS.SetPoints(itk.vector_container_from_array(fixedMeshPoints.flatten()))
 
-# movingPS.SetPoints(itk.vector_container_from_array(final_mesh_points.flatten()))
-# fixedPS.SetPoints(itk.vector_container_from_array(fixedMeshPoints.flatten()))
+    # For getting the Bounding Box
+    ElementIdentifierType = itk.UL
+    CoordType = itk.F
+    Dimension = 3
 
-# # For getting the Bounding Box
-# ElementIdentifierType = itk.UL
-# CoordType = itk.F
-# Dimension = 3
+    VecContType = itk.VectorContainer[
+        ElementIdentifierType, itk.Point[CoordType, Dimension]
+    ]
+    bounding_box = itk.BoundingBox[
+        ElementIdentifierType, Dimension, CoordType, VecContType
+    ].New()
 
-# VecContType = itk.VectorContainer[
-#     ElementIdentifierType, itk.Point[CoordType, Dimension]
-# ]
-# bounding_box = itk.BoundingBox[
-#     ElementIdentifierType, Dimension, CoordType, VecContType
-# ].New()
+    bounding_box.SetPoints(movingPS.GetPoints())
+    bounding_box.ComputeBoundingBox()
 
-# bounding_box.SetPoints(movingPS.GetPoints())
-# bounding_box.ComputeBoundingBox()
+    minBounds = np.array(bounding_box.GetMinimum())
+    maxBounds = np.array(bounding_box.GetMaximum())
 
-# minBounds = np.array(bounding_box.GetMinimum())
-# maxBounds = np.array(bounding_box.GetMaximum())
+    spacing = np.sqrt(bounding_box.GetDiagonalLength2()) / imageDiagonal
+    diff = maxBounds - minBounds
 
-# spacing = np.sqrt(bounding_box.GetDiagonalLength2()) / imageDiagonal
-# diff = maxBounds - minBounds
+    print('Spacing ', spacing)
+    print('minBounds ', minBounds)
+    print('maxBounds ', maxBounds)
 
-# print('Spacing ', spacing)
-# print('minBounds ', minBounds)
-# print('maxBounds ', maxBounds)
+    fixedImageSize = [0] * 3
+    fixedImageSize[0] = math.ceil(1.25 * diff[0] / spacing)
+    fixedImageSize[1] = math.ceil(1.25 * diff[1] / spacing)
+    fixedImageSize[2] = math.ceil(1.25 * diff[2] / spacing)
 
-# fixedImageSize = [0] * 3
-# fixedImageSize[0] = math.ceil(1.25 * diff[0] / spacing)
-# fixedImageSize[1] = math.ceil(1.25 * diff[1] / spacing)
-# fixedImageSize[2] = math.ceil(1.25 * diff[2] / spacing)
+    fixedImageOrigin = [0] * 3
+    fixedImageOrigin[0] = minBounds[0] - 0.25 * diff[0]
+    fixedImageOrigin[1] = minBounds[1] - 0.25 * diff[1]
+    fixedImageOrigin[2] = minBounds[2] - 0.25 * diff[2]
 
-# fixedImageOrigin = [0] * 3
-# fixedImageOrigin[0] = minBounds[0] - 0.25 * diff[0]
-# fixedImageOrigin[1] = minBounds[1] - 0.25 * diff[1]
-# fixedImageOrigin[2] = minBounds[2] - 0.25 * diff[2]
+    fixedImageSpacing = np.ones(3) * spacing
+    fixedImageDirection = np.identity(3)
 
-# fixedImageSpacing = np.ones(3) * spacing
-# fixedImageDirection = np.identity(3)
-
-# fixedImage = FixedImageType.New()
-# fixedImage.SetRegions(fixedImageSize)
-# fixedImage.SetOrigin(fixedImageOrigin)
-# fixedImage.SetDirection(fixedImageDirection)
-# fixedImage.SetSpacing(fixedImageSpacing)
-# fixedImage.Allocate()
-
-
-# # Create BSpline Transformation object and initialize the parameters
-# SplineOrder = 3
-# TransformType = itk.BSplineTransform[itk.D, Dimension, SplineOrder]
-# InitializerType = itk.BSplineTransformInitializer[TransformType, FixedImageType]
-
-# transform = TransformType.New()
-
-# numberOfGridNodesInOneDimension = 5
-# transformInitializer = InitializerType.New()
-# transformInitializer.SetTransform(transform)
-# transformInitializer.SetImage(fixedImage)
-# transformInitializer.SetTransformDomainMeshSize(
-#     numberOfGridNodesInOneDimension - SplineOrder
-# )
-# transformInitializer.InitializeTransform()
-
-# # Registration Loop
-# numOfIterations = 10000
-# maxStep = 0.1
-# learningRate = 0.1
-
-# # Good combinations
-# # 10000
-# # sigma: 3, Kneighbourhood 20, bspline: 4 -> 3.72
-# # sigma: 3, Kneighbourhood 20, bspline: 8 -> 3.77
-# # sigma: 3, Kneighbourhood 20, bspline: 6 -> 3.42
-# # sigma: 3, Kneighbourhood 20, bspline: 5 -> 3.70 -> best (by qualitative comparison)
-# # 
-# MetricType = itk.ExpectationBasedPointSetToPointSetMetricv4[type(movingPS)]
-# metric = MetricType.New()
-# metric.SetFixedPointSet(movingPS)
-# metric.SetMovingPointSet(fixedPS)
-# metric.SetPointSetSigma(3)
-# metric.SetEvaluationKNeighborhood(20)
-# metric.SetMovingTransform(transform)
-# metric.Initialize()
-
-# print('Metric Created')
-
-# optimizer = itk.RegularStepGradientDescentOptimizerv4.D.New()
-# optimizer.SetNumberOfIterations(numOfIterations)
-# optimizer.SetMaximumStepSizeInPhysicalUnits(maxStep)
-# optimizer.SetLearningRate(learningRate)
-# optimizer.SetMinimumConvergenceValue(-100)
-# optimizer.SetConvergenceWindowSize(numOfIterations)
-# optimizer.SetMetric(metric)
+    fixedImage = FixedImageType.New()
+    fixedImage.SetRegions(fixedImageSize)
+    fixedImage.SetOrigin(fixedImageOrigin)
+    fixedImage.SetDirection(fixedImageDirection)
+    fixedImage.SetSpacing(fixedImageSpacing)
+    fixedImage.Allocate()
 
 
-# def iteration_update():
-#     if optimizer.GetCurrentIteration() % 100 == 0:
-#         print(
-#             f"It: {optimizer.GetCurrentIteration()}"
-#             f" metric value: {optimizer.GetCurrentMetricValue():.6f} "
-#         )
-#     return
+    # Create BSpline Transformation object and initialize the parameters
+    SplineOrder = 3
+    TransformType = itk.BSplineTransform[itk.D, Dimension, SplineOrder]
+    InitializerType = itk.BSplineTransformInitializer[TransformType, FixedImageType]
 
-# iteration_command = itk.PyCommand.New()
-# iteration_command.SetCommandCallable(iteration_update)
-# optimizer.AddObserver(itk.IterationEvent(), iteration_command)
+    transform = TransformType.New()
 
-# optimizer.StartOptimization()
+    numberOfGridNodesInOneDimension = 5
+    transformInitializer = InitializerType.New()
+    transformInitializer.SetTransform(transform)
+    transformInitializer.SetImage(fixedImage)
+    transformInitializer.SetTransformDomainMeshSize(
+        numberOfGridNodesInOneDimension - SplineOrder
+    )
+    transformInitializer.InitializeTransform()
 
-# # Transform the point set using the final transform
-# final_transform = metric.GetMovingTransform()
+    # Registration Loop
+    numOfIterations = 10000
+    maxStep = 0.1
+    learningRate = 0.1
 
-# e_metric = itk.EuclideanDistancePointSetToPointSetMetricv4.PSD3.New()
-# e_metric.SetFixedPointSet(fixedPS)
-# e_metric.SetMovingPointSet(movingPS)
-# print("Euclidean Metric Before TSD Deformable Registration ", e_metric.GetValue())
+    # Good combinations
+    # 10000
+    # sigma: 3, Kneighbourhood 20, bspline: 4 -> 3.72
+    # sigma: 3, Kneighbourhood 20, bspline: 8 -> 3.77
+    # sigma: 3, Kneighbourhood 20, bspline: 6 -> 3.42
+    # sigma: 3, Kneighbourhood 20, bspline: 5 -> 3.70 -> best (by qualitative comparison)
+    
+    MetricType = itk.ExpectationBasedPointSetToPointSetMetricv4[type(movingPS)]
+    metric = MetricType.New()
+    metric.SetFixedPointSet(movingPS)
+    metric.SetMovingPointSet(fixedPS)
+    metric.SetPointSetSigma(3)
+    metric.SetEvaluationKNeighborhood(20)
+    metric.SetMovingTransform(transform)
+    metric.Initialize()
 
-# movingPSNew = itk.PointSet[itk.D, 3].New()
-# numberOfPoints = movingPS.GetNumberOfPoints()
+    print('Metric Created')
 
-# for n in range(0, numberOfPoints):
-#     movingPSNew.SetPoint(n, final_transform.TransformPoint(movingPS.GetPoint(n)))
+    optimizer = itk.RegularStepGradientDescentOptimizerv4.D.New()
+    optimizer.SetNumberOfIterations(numOfIterations)
+    optimizer.SetMaximumStepSizeInPhysicalUnits(maxStep)
+    optimizer.SetLearningRate(learningRate)
+    optimizer.SetMinimumConvergenceValue(-100)
+    optimizer.SetConvergenceWindowSize(numOfIterations)
+    optimizer.SetMetric(metric)
 
-# e_metric = itk.EuclideanDistancePointSetToPointSetMetricv4.PSD3.New()
-# e_metric.SetFixedPointSet(fixedPS)
-# e_metric.SetMovingPointSet(movingPSNew)
-# print("Euclidean Metric After TSD Deformable Registration ", e_metric.GetValue())
+    def iteration_update():
+        if optimizer.GetCurrentIteration() % 100 == 0:
+            print(
+                f"It: {optimizer.GetCurrentIteration()}"
+                f" metric value: {optimizer.GetCurrentMetricValue():.6f} "
+            )
+        return
 
-# # Write the Displacement Field
-# write_displacement_field = False
-# if write_displacement_field:
-#     convertFilter = itk.TransformToDisplacementFieldFilter.IVF33D.New()
-#     convertFilter.SetTransform(final_transform)
-#     convertFilter.UseReferenceImageOn()
-#     convertFilter.SetReferenceImage(fixedImage)
-#     convertFilter.Update()
-#     field = convertFilter.GetOutput()
-#     field = np.array(field)
-#     np.save("displacement_field.npy", field)
+    iteration_command = itk.PyCommand.New()
+    iteration_command.SetCommandCallable(iteration_update)
+    optimizer.AddObserver(itk.IterationEvent(), iteration_command)
+
+    optimizer.StartOptimization()
+
+    # Transform the point set using the final transform
+    final_transform = metric.GetMovingTransform()
+
+    e_metric = itk.EuclideanDistancePointSetToPointSetMetricv4.PSD3.New()
+    e_metric.SetFixedPointSet(fixedPS)
+    e_metric.SetMovingPointSet(movingPS)
+    print("Euclidean Metric Before TSD Deformable Registration ", e_metric.GetValue())
+
+    movingPSNew = itk.PointSet[itk.D, 3].New()
+    numberOfPoints = movingPS.GetNumberOfPoints()
+
+    for n in range(0, numberOfPoints):
+        movingPSNew.SetPoint(n, final_transform.TransformPoint(movingPS.GetPoint(n)))
+
+    e_metric = itk.EuclideanDistancePointSetToPointSetMetricv4.PSD3.New()
+    e_metric.SetFixedPointSet(fixedPS)
+    e_metric.SetMovingPointSet(movingPSNew)
+    print("Euclidean Metric After TSD Deformable Registration ", e_metric.GetValue())
+
+    # Write the Displacement Field
+    write_displacement_field = False
+    if write_displacement_field:
+        convertFilter = itk.TransformToDisplacementFieldFilter.IVF33D.New()
+        convertFilter.SetTransform(final_transform)
+        convertFilter.UseReferenceImageOn()
+        convertFilter.SetReferenceImage(fixedImage)
+        convertFilter.Update()
+        field = convertFilter.GetOutput()
+        field = np.array(field)
+        np.save("displacement_field.npy", field)
 
 
-# # Write the final registered mesh
-# movingMeshPath = WRITE_PATH + casename + "_movingMeshRigidRegistered.vtk"
-# movingMesh = itk.meshread(movingMeshPath)
-# movingMesh = itk.transform_mesh_filter(movingMesh, transform=final_transform)
-# write_itk_mesh(movingMesh, WRITE_PATH + casename + "_movingMeshFinalRegistered.vtk")
-
-# # print("Calculating distance between landmarks")
-# # # ransac transform
-# # movingLandmarkMesh = itk.transform_mesh_filter(
-# #     movingLandmarkMesh, transform=first_transform
-# # )
+    # Write the final registered mesh
+    movingMeshPath = WRITE_PATH + casename + "_movingMeshRigidRegistered.vtk"
+    movingMesh = itk.meshread(movingMeshPath)
+    movingMesh = itk.transform_mesh_filter(movingMesh, transform=final_transform)
+    write_itk_mesh(movingMesh, WRITE_PATH + casename + "_movingMeshFinalRegistered.vtk")
+    return
 
 # # # refinement transform
 # # movingLandmarkMesh = itk.transform_mesh_filter(
