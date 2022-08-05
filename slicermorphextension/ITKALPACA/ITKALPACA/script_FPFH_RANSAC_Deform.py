@@ -537,7 +537,7 @@ def process(
     casename = source.split("/")[-1].split(".")[0]
     paths = [target, source]
 
-    WRITE_PATH = "./"
+    WRITE_PATH = "/data/Apedata/Slicer-cli-outputs/"
     # Write the meshes in vtk format so that they can be read in ITK
     vtk_meshes = list()
 
@@ -615,8 +615,8 @@ def process(
     movingMesh = itk_transformed_meshes[1]
 
     # Write the cleaned Moment Initialized meshes
-    movingMeshPath = "./" + casename + "_movingMesh.vtk"
-    fixedMeshPath = "./" + casename + "_fixedMesh.vtk"
+    movingMeshPath = WRITE_PATH + casename + "_movingMesh.vtk"
+    fixedMeshPath = WRITE_PATH + casename + "_fixedMesh.vtk"
 
     write_itk_mesh(fixedMesh, fixedMeshPath)
     write_itk_mesh(movingMesh, movingMeshPath)
@@ -678,8 +678,8 @@ def process(
     print(f"FPFH generates {num_corrs} putative correspondences.")
 
     print(fixed_corr.shape, moving_corr.shape)
-    np.save(casename + "_moving_corr.npy", moving_corr)
-    np.save(casename + "_fixed_corr.npy", fixed_corr)
+    np.save(WRITE_PATH + casename + "_moving_corr.npy", moving_corr)
+    np.save(WRITE_PATH + casename + "_fixed_corr.npy", fixed_corr)
 
     # Perform Initial alignment using Ransac parallel iterations
     transform_matrix, index, value = ransac_icp_parallel_vtk(
@@ -698,7 +698,7 @@ def process(
     movingMesh_RANSAC = itk.transform_mesh_filter(
         movingMesh, transform=transform_matrix
     )
-    write_itk_mesh(movingMesh_RANSAC, "./" + casename + "_movingMeshRANSAC.vtk")
+    write_itk_mesh(movingMesh_RANSAC, WRITE_PATH + casename + "_movingMeshRANSAC.vtk")
 
     movingMeshPoints = transform_numpy_points(moving_xyz.T, transform_matrix)
 
@@ -874,7 +874,7 @@ def process(
         convertFilter.Update()
         field = convertFilter.GetOutput()
         field = np.array(field)
-        np.save("displacement_field.npy", field)
+        np.save(WRITE_PATH + "displacement_field.npy", field)
 
     # Write the final registered mesh
     movingMeshPath = WRITE_PATH + casename + "_movingMeshRigidRegistered.vtk"
