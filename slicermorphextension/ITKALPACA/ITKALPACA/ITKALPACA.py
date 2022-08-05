@@ -1,14 +1,58 @@
 #!/usr/bin/env python-real
 
 import sys
-
 import script_FPFH_RANSAC_Deform as alpaca
 
-def main(input, sigma, output):
-    alpaca.process(input, output)
+
+def main(
+    target,
+    source,
+    subsample_radius,
+    number_of_ransac_points,
+    inlier_value,
+    fpfh_radius,
+    fpfh_neighbors,
+    deform_sigma,
+    deform_neighbourhood,
+):
+    alpaca.process(
+        target,
+        source,
+        subsample_radius,
+        number_of_ransac_points,
+        inlier_value,
+        fpfh_radius,
+        fpfh_neighbors,
+        deform_sigma,
+        deform_neighbourhood,
+    )
+
 
 if __name__ == "__main__":
     if len(sys.argv) < 4:
-        print("Usage: ITKALPACA <input> <sigma> <output>")
+        print(
+            "Usage: ITKALPACA <target> <source> <subsample_radius> <number_of_ransac_points> <inlier_value> <fpfh_radius> <fpfh_neighbors> <deform_sigma> <deform_neighbourhood>"
+        )
         sys.exit(1)
-    main(sys.argv[1], float(sys.argv[2]), sys.argv[3])
+    print("Parameters are ")
+    print("target : ", sys.argv[1])
+    print("source : ", sys.argv[2])
+    print("subsample_radius : ", sys.argv[3])
+    print("number_of_ransac_points : ", int(sys.argv[4]))
+    print("inlier_value : ", float(sys.argv[5]))
+    print("fpfh_radius : ", sys.argv[6])
+    print("fpfh_neighbors : ", sys.argv[7])
+    print("deform_sigma : ", sys.argv[8])
+    print("deform_neighbourhood : ", sys.argv[9])
+
+    main(
+        target=sys.argv[1],
+        source=sys.argv[2],
+        subsample_radius=int(sys.argv[3]),
+        number_of_ransac_points=int(sys.argv[4]),
+        inlier_value=float(sys.argv[5]),
+        fpfh_radius=int(sys.argv[6]),
+        fpfh_neighbors=int(sys.argv[7]),
+        deform_sigma=float(sys.argv[8]),
+        deform_neighbourhood=int(sys.argv[9])
+    )

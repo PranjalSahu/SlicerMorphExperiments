@@ -11,27 +11,69 @@
   <acknowledgements><![CDATA[This work is part of the National Alliance for Medical Image Computing (NAMIC), funded by the National Institutes of Health through the NIH Roadmap for Medical Research, Grant U54 EB005149.]]></acknowledgements>
   <parameters>
     <double>
-      <name>sigma</name>
-      <label>Sigma</label>
-      <index>1</index>
-      <description><![CDATA[Sigma value in physical units (e.g., mm) of the Gaussian kernel]]></description>
-      <default>1.0</default>
+      <name>subsample_radius</name>
+      <label>PointSet Subsample Radius</label>
+      <index>3</index>
+      <description><![CDATA[Radius used to sub-sample points from full resolution pointset]]></description>
+      <default>5.0</default>
     </double>
+    <integer>
+      <name>number_of_ransac_points</name>
+      <label>Ransac Subset Points</label>
+      <index>4</index>
+      <description><![CDATA[Number of points to use in each RANSAC iteration]]></description>
+      <default>250</default>
+    </integer>
+    <double>
+      <name>inlier_value</name>
+      <label>RANSAC Inlier Value</label>
+      <index>5</index>
+      <description><![CDATA[Inlier threshold to determine Feature Matching]]></description>
+      <default>20.0</default>
+    </double>
+    <integer>
+      <name>fpfh_radius</name>
+      <label>FPFH Radius</label>
+      <index>6</index>
+      <description><![CDATA[FPFH Feature Radius]]></description>
+      <default>25</default>
+    </integer>
+    <integer>
+      <name>fpfh_neighbors</name>
+      <label>Max FPFH Neighbors</label>
+      <index>7</index>
+      <description><![CDATA[FPFH Max Number of Neihbors]]></description>
+      <default>100</default>
+    </integer>
+    <double>
+      <name>deform_sigma</name>
+      <label>Sigma for Deformable</label>
+      <index>8</index>
+      <description><![CDATA[Sigma for Deformable Registration]]></description>
+      <default>3.0</default>
+    </double>
+    <integer>
+      <name>deform_neighbourhood</name>
+      <label>Neighbors for Deformable</label>
+      <index>9</index>
+      <description><![CDATA[Number of neighbors for Deformable Registratation]]></description>
+      <default>20</default>
+    </integer>
     <label>IO</label>
     <description><![CDATA[Input/output parameters]]></description>
     <geometry>
-      <name>inputVolume</name>
-      <label>Input Volume</label>
+      <name>inputMesh</name>
+      <label>Input Mesh</label>
       <channel>input</channel>
       <index>0</index>
-      <description><![CDATA[Input volume]]></description>
+      <description><![CDATA[Input Mesh]]></description>
     </geometry>
     <geometry reference="inputVolume">
-      <name>outputVolume</name>
-      <label>Output Volume</label>
+      <name>outputMesh</name>
+      <label>Output Mesh</label>
       <channel>input</channel>
-      <index>2</index>
-      <description><![CDATA[Blurred Volume]]></description>
+      <index>1</index>
+      <description><![CDATA[Output Mesh]]></description>
     </geometry>
   </parameters>
 </executable>
