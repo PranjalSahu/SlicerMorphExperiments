@@ -22,6 +22,7 @@ from vtk.util.numpy_support import numpy_to_vtk
 # Install Dependencies using
 #/home/pranjal.sahu/Downloads/Slicer-5.0.3-linux-amd64/bin/PythonSlicer -m pip install --prefix=/data/SlicerMorph/ITKALPACA-python-dependencies itk==5.3rc4
 #/home/pranjal.sahu/Downloads/Slicer-5.0.3-linux-amd64/bin/PythonSlicer -m pip install --prefix=/data/SlicerMorph/ITKALPACA-python-dependencies joblib
+#python -m pip install -U --no-deps --prefix=/data/SlicerMorph/ITKALPACA-python-dependencies /data/SlicerMorph/LinuxWheel39_fpfh_5.3rc4_again/itk_fpfh-0.1.0-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl --no-cache-dir
 
 # from sklearn.preprocessing import scale 
 
@@ -591,7 +592,6 @@ def process(target, source):
     fixed_xyz = fixedMeshPoints.T
     moving_xyz = movingMeshPoints.T
 
-    return
     # np.save(WRITE_PATH + casename + '_fixedMesh_landmarks.npy', itk.array_from_vector_container(fixedLandmarkMesh.GetPoints()))
     # np.save(WRITE_PATH + casename + '_movingMesh_landmarks.npy', itk.array_from_vector_container(movingLandmarkMesh.GetPoints()))
 
@@ -599,14 +599,15 @@ def process(target, source):
     # np.save(WRITE_PATH + casename + '_fixedMeshPoints.npy', fixedMeshPoints)
 
     # New FPFH Code
-    # pcS = np.expand_dims(fixed_xyz.T, -1)
-    # normal_np_pcl = fixedMeshPointNormals
-    # fixed_feats = get_fpfh_feature(pcS, normal_np_pcl, 25, 100)
+    pcS = np.expand_dims(fixed_xyz.T, -1)
+    normal_np_pcl = fixedMeshPointNormals
+    fixed_feats = get_fpfh_feature(pcS, normal_np_pcl, 25, 100)
 
-    # pcS = np.expand_dims(moving_xyz.T, -1)
-    # normal_np_pcl = movingMeshPointNormals
-    # moving_feats = get_fpfh_feature(pcS, normal_np_pcl, 25, 100)
+    pcS = np.expand_dims(moving_xyz.T, -1)
+    normal_np_pcl = movingMeshPointNormals
+    moving_feats = get_fpfh_feature(pcS, normal_np_pcl, 25, 100)
 
+    return
 
 # # Establish correspondences by nearest neighbour search in feature space
 # corrs_A, corrs_B = find_correspondences(fixed_feats, moving_feats, mutual_filter=True)
