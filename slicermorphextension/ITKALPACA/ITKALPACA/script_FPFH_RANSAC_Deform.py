@@ -607,7 +607,7 @@ def process(
         # Make all the points to positive coordinates
         mesh_points = itk.array_from_vector_container(mesh.GetPoints())
         m = np.min(mesh_points, 0)  # - np.array([5, 5, 5], dtype=mesh_points.dtype)
-        mesh_points = mesh_points# - m
+        mesh_points = mesh_points - m
         mesh.SetPoints(itk.vector_container_from_array(mesh_points.flatten()))
         itk_transformed_meshes.append(mesh)
 
@@ -685,7 +685,7 @@ def process(
     transform_matrix, index, value = ransac_icp_parallel_vtk(
         movingMeshPoints=moving_corr.T,
         fixedMeshPoints=fixed_corr.T,
-        number_of_iterations=10000,
+        number_of_iterations=20000,
         mesh_sub_sample_points=500,
         number_of_ransac_points=number_of_ransac_points,
         transform_type=3,
