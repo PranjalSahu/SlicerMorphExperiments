@@ -12,12 +12,13 @@ import numpy as np
 import vtk
 import itk
 import math
+import joblib
 from joblib import Parallel, delayed
 import time
 import copy
 from vtk.util import numpy_support
 from vtk.util.numpy_support import numpy_to_vtk
-
+from scipy.spatial import cKDTree
 
 # Install Dependencies using
 #/home/pranjal.sahu/Downloads/Slicer-5.0.3-linux-amd64/bin/PythonSlicer -m pip install --prefix=/data/SlicerMorph/ITKALPACA-python-dependencies itk==5.3rc4
@@ -27,7 +28,7 @@ from vtk.util.numpy_support import numpy_to_vtk
 # from sklearn.preprocessing import scale 
 
 
-# from scipy.spatial import cKDTree
+
 
 def get_euclidean_distance(input_fixedPoints, input_movingPoints):
     mesh_fixed = itk.Mesh[itk.D, 3].New()
@@ -73,8 +74,6 @@ def subsample_points_poisson(inputMesh, radius=4.5):
     sampled_points = f.GetOutput()
     points = sampled_points.GetPoints()
     pointdata = points.GetData()
-    print('point data is ')
-    print(pointdata)
     as_numpy = numpy_support.vtk_to_numpy(pointdata)
     return as_numpy
 
@@ -241,7 +240,7 @@ def ransac_icp_parallel_vtk(movingMeshPoints, fixedMeshPoints,
     all_points1 = movingMeshPoints
     all_points2 = fixedMeshPoints
 
-    def process(i, mesh_sub_sample_points, number_of_ransac_points,
+    def process_task(i, mesh_sub_sample_points, number_of_ransac_points,
                 return_result, inlier_points=None):
         '''
         Args:
@@ -321,8 +320,6 @@ def ransac_icp_parallel_vtk(movingMeshPoints, fixedMeshPoints,
                 vector_container.SetElement(i, list(inputarray[i]))
             return vector_container
 
-        print(A_corr_temp.shape, B_corr_temp.shape)
-
         ''' For converting VTK Transform to ITK Transform '''
         current_transform = itk_transform_from_vtk(landmarkTransform)
         
@@ -350,13 +347,13 @@ def ransac_icp_parallel_vtk(movingMeshPoints, fixedMeshPoints,
     # Spawn multiple jobs to utilize all cores
     
     # Test code for not using parallel threads
-#     results = []
-#     for i in range(number_of_iterations):
-#         results.append(process(i, mesh_sub_sample_points, number_of_ransac_points, 0))
+    results = []
+    for i in range(number_of_iterations):
+        results.append(process_task(i, mesh_sub_sample_points, number_of_ransac_points, 0))
     
-    results = Parallel(n_jobs=-1)(
-        delayed(process)(i, mesh_sub_sample_points, number_of_ransac_points, 0)
-        for i in range(number_of_iterations))
+    #results = Parallel(n_jobs=-1)(
+    #    delayed(process_task)(i, mesh_sub_sample_points, number_of_ransac_points, 0)
+    #    for i in range(number_of_iterations))
     
     results_values =  []
     for k in results:
@@ -366,7 +363,7 @@ def ransac_icp_parallel_vtk(movingMeshPoints, fixedMeshPoints,
     index = np.argmax(results_values)
     value = results_values[index]
     
-    final_result = process(index, mesh_sub_sample_points,
+    final_result = process_task(index, mesh_sub_sample_points,
                           number_of_ransac_points, 1, results[index][1])
     
     return final_result, index, value
@@ -445,7 +442,7 @@ def transform_numpy_points(points_np, transform):
 
 def find_knn_cpu(feat0, feat1, knn=1, return_distance=False):
     feat1tree = cKDTree(feat1)
-    dists, nn_inds = feat1tree.query(feat0, k=knn, n_jobs=-1)
+    dists, nn_inds = feat1tree.query(feat0, k=knn)
     if return_distance:
         return nn_inds, dists
     else:
@@ -476,9 +473,12 @@ def find_correspondences(feats0, feats1, mutual_filter=True):
         source: Atlas mesh which will be deformed to align it with target mesh.
 '''
 def process(target, source):
+    #import joblib
+    #print('Pranjal ', joblib)
     casename = source.split("/")[-1].split(".")[0]
     paths = [target, source]
 
+    WRITE_PATH = './'
     # Write the meshes in vtk format so that they can be read in ITK
     vtk_meshes = list()
 
@@ -607,57 +607,55 @@ def process(target, source):
     normal_np_pcl = movingMeshPointNormals
     moving_feats = get_fpfh_feature(pcS, normal_np_pcl, 25, 100)
 
+    # Establish correspondences by nearest neighbour search in feature space
+    corrs_A, corrs_B = find_correspondences(fixed_feats, moving_feats, mutual_filter=True)
+
+    fixed_corr = fixed_xyz[:, corrs_A]  # np array of size 3 by num_corrs
+    moving_corr = moving_xyz[:, corrs_B]  # np array of size 3 by num_corrs
+
+    num_corrs = fixed_corr.shape[1]
+    print(f'FPFH generates {num_corrs} putative correspondences.')
+
+    print(fixed_corr.shape, moving_corr.shape)
+    np.save(casename+'_moving_corr.npy', moving_corr)
+    np.save(casename+'_fixed_corr.npy', fixed_corr)
+
+    # Perform Initial alignment using Ransac parallel iterations
+    transform_matrix, index, value = ransac_icp_parallel_vtk(movingMeshPoints = moving_corr.T, 
+                                                        fixedMeshPoints = fixed_corr.T,
+                                                        number_of_iterations = 10000,
+                                                        mesh_sub_sample_points = 500,
+                                                        number_of_ransac_points = 250, 
+                                                        transform_type = 3,
+                                                        inlier_value = 20)
+
+    print('Best Combination ', index, value)
+    transform_matrix = itk.transform_from_dict(transform_matrix)
+
+    movingMesh_RANSAC = itk.transform_mesh_filter(movingMesh, transform=transform_matrix)
+    write_itk_mesh(movingMesh_RANSAC, './' + casename + "_movingMeshRANSAC.vtk")
+
+    movingMeshPoints = transform_numpy_points(moving_xyz.T, transform_matrix)
+
+    print("Starting Rigid Refinement")
+    print('Before Distance ', get_euclidean_distance(fixedMeshPoints,  movingMeshPoints))
+
+    transform_type = 0
+    final_mesh_points, second_transform = final_iteration(
+        fixedMeshPoints, movingMeshPoints, transform_type
+    )
+    np.save(WRITE_PATH + 'fixedMeshPoints.npy', fixedMeshPoints)
+    np.save(WRITE_PATH + 'movingMeshPoints.npy', movingMeshPoints)
+    np.save(WRITE_PATH + 'final_mesh_points.npy', final_mesh_points)
+
+    print('After Distance ', get_euclidean_distance(fixedMeshPoints,  final_mesh_points))
+
+    movingMesh_Rigid = itk.transform_mesh_filter(movingMesh_RANSAC, transform=second_transform)
+    write_itk_mesh(movingMesh_Rigid, WRITE_PATH + casename + "_movingMeshRigidRegistered.vtk")
+
+    print("Completed Rigid Refinement")
     return
-
-# # Establish correspondences by nearest neighbour search in feature space
-# corrs_A, corrs_B = find_correspondences(fixed_feats, moving_feats, mutual_filter=True)
-
-# fixed_corr = fixed_xyz[:, corrs_A]  # np array of size 3 by num_corrs
-# moving_corr = moving_xyz[:, corrs_B]  # np array of size 3 by num_corrs
-
-# num_corrs = fixed_corr.shape[1]
-# print(f'FPFH generates {num_corrs} putative correspondences.')
-
-# print(fixed_corr.shape, moving_corr.shape)
-# np.save(casename+'_moving_corr.npy', moving_corr)
-# np.save(casename+'_fixed_corr.npy', fixed_corr)
-
-# exit(0)
-# # Perform Initial alignment using Ransac parallel iterations
-# transform_matrix, index, value = ransac_icp_parallel_vtk(movingMeshPoints = moving_corr.T, 
-#                                                     fixedMeshPoints = fixed_corr.T,
-#                                                     number_of_iterations = 25000,
-#                                                     mesh_sub_sample_points = 500,
-#                                                     number_of_ransac_points = 250, 
-#                                                     transform_type = 3,
-#                                                     inlier_value = 20)
-
-# print('Best Combination ', index, value)
-# transform_matrix = itk.transform_from_dict(transform_matrix)
-
-# movingMesh_RANSAC = itk.transform_mesh_filter(movingMesh, transform=transform_matrix)
-# write_itk_mesh(movingMesh_RANSAC, WRITE_PATH + casename + "_movingMeshRANSAC.vtk")
-
-# movingMeshPoints = transform_numpy_points(moving_xyz.T, transform_matrix)
-
-# print("Starting Rigid Refinement")
-# print('Before Distance ', get_euclidean_distance(fixedMeshPoints,  movingMeshPoints))
-
-# transform_type = 0
-# final_mesh_points, second_transform = final_iteration(
-#     fixedMeshPoints, movingMeshPoints, transform_type
-# )
-# np.save(WRITE_PATH + 'fixedMeshPoints.npy', fixedMeshPoints)
-# np.save(WRITE_PATH + 'movingMeshPoints.npy', movingMeshPoints)
-# np.save(WRITE_PATH + 'final_mesh_points.npy', final_mesh_points)
-
-# print('After Distance ', get_euclidean_distance(fixedMeshPoints,  final_mesh_points))
-
-# movingMesh_Rigid = itk.transform_mesh_filter(movingMesh_RANSAC, transform=second_transform)
-# write_itk_mesh(movingMesh_Rigid, WRITE_PATH + casename + "_movingMeshRigidRegistered.vtk")
-
-# print("Completed Rigid Refinement")
-# # [STAR] Expectation Based PointSetToPointSetMetricv4 Registration
+    # [STAR] Expectation Based PointSetToPointSetMetricv4 Registration
 
 # imageDiagonal = 100
 
