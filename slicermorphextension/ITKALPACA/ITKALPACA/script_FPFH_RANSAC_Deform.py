@@ -529,6 +529,8 @@ def process(
     fpfh_neighbors,
     deform_sigma,
     deform_neighbourhood,
+    bspline_grid,
+    deformable_iterations
 ):
     # import joblib
     # print('Pranjal ', joblib)
@@ -605,7 +607,7 @@ def process(
         # Make all the points to positive coordinates
         mesh_points = itk.array_from_vector_container(mesh.GetPoints())
         m = np.min(mesh_points, 0)  # - np.array([5, 5, 5], dtype=mesh_points.dtype)
-        mesh_points = mesh_points - m
+        mesh_points = mesh_points# - m
         mesh.SetPoints(itk.vector_container_from_array(mesh_points.flatten()))
         itk_transformed_meshes.append(mesh)
 
@@ -789,7 +791,7 @@ def process(
 
     transform = TransformType.New()
 
-    numberOfGridNodesInOneDimension = 5
+    numberOfGridNodesInOneDimension = bspline_grid
     transformInitializer = InitializerType.New()
     transformInitializer.SetTransform(transform)
     transformInitializer.SetImage(fixedImage)
@@ -799,7 +801,7 @@ def process(
     transformInitializer.InitializeTransform()
 
     # Registration Loop
-    numOfIterations = 10000
+    numOfIterations = deformable_iterations
     maxStep = 0.1
     learningRate = 0.1
 

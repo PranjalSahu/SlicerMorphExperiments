@@ -59,21 +59,35 @@
       <description><![CDATA[Number of neighbors for Deformable Registratation]]></description>
       <default>20</default>
     </integer>
+    <integer>
+      <name>bspline_grid</name>
+      <label>BSpline Grid</label>
+      <index>10</index>
+      <description><![CDATA[Number of Grids in the BSpline transform for Deformable Registration]]></description>
+      <default>5</default>
+    </integer>
+    <integer>
+      <name>deformable_iterations</name>
+      <label>Deformable Iterations</label>
+      <index>11</index>
+      <description><![CDATA[Number of iterations for Deformable Registration Step]]></description>
+      <default>10000</default>
+    </integer>
     <label>IO</label>
     <description><![CDATA[Input/output parameters]]></description>
     <geometry>
-      <name>inputMesh</name>
-      <label>Input Mesh</label>
+      <name>targetMesh</name>
+      <label>Target Mesh</label>
       <channel>input</channel>
       <index>0</index>
-      <description><![CDATA[Input Mesh]]></description>
+      <description><![CDATA[Target Mesh]]></description>
     </geometry>
     <geometry reference="inputVolume">
-      <name>outputMesh</name>
-      <label>Output Mesh</label>
+      <name>sourceMesh</name>
+      <label>Source Mesh</label>
       <channel>input</channel>
       <index>1</index>
-      <description><![CDATA[Output Mesh]]></description>
+      <description><![CDATA[Source Mesh]]></description>
     </geometry>
   </parameters>
 </executable>
