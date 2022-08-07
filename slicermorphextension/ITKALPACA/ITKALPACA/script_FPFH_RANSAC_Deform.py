@@ -88,14 +88,19 @@ def subsample_points_poisson_polydata(inputMesh, radius):
     sampled_points = f.GetOutput()
     return sampled_points
 
+def write_vtk(vtk_polydata, filename):
+    a = vtk.vtkPolyDataWriter()
+    a.SetFileName(filename)
+    a.SetInputData(vtk_polydata)
+    a.Update()
+    return
 
-def readvtk(filename):
+def read_vtk(filename):
     a = vtk.vtkPolyDataReader()
     a.SetFileName(filename)
     a.Update()
     m1 = a.GetOutput()
     return m1
-
 
 def readply(filename):
     a = vtk.vtkPLYReader()
@@ -493,6 +498,7 @@ def find_knn_cpu(feat0, feat1, knn=1, return_distance=False):
 
 
 def find_correspondences(feats0, feats1, mutual_filter=True):
+    # Remove cases by filtering using some threshold
     nns01 = find_knn_cpu(feats0, feats1, knn=1, return_distance=False)
     corres01_idx0 = np.arange(len(nns01))
     corres01_idx1 = nns01
@@ -510,6 +516,45 @@ def find_correspondences(feats0, feats1, mutual_filter=True):
 
     return corres_idx0, corres_idx1
 
+def get_numpy_points_from_vtk(vtk_polydata):
+    '''
+        Returns the points as numpy from a vtk_polydata
+    '''
+    points = vtk_polydata.GetPoints()
+    pointdata = points.GetData()
+    points_as_numpy = numpy_support.vtk_to_numpy(pointdata)
+    return points_as_numpy
+
+def set_numpy_points_in_vtk(vtk_polydata, points_as_numpy):
+    '''
+        Sets the numpy points to a vtk_polydata
+    '''
+    vtk_data_array = numpy_support.numpy_to_vtk(
+        num_array=points_as_numpy, deep=True, array_type=vtk.VTK_FLOAT
+    )
+    points2 = vtk.vtkPoints()
+    points2.SetData(vtk_data_array)
+    vtk_polydata.SetPoints(points2)
+    return
+
+def transform_points_in_vtk(vtk_polydata, itk_transform):
+    points_as_numpy = get_numpy_points_from_vtk(vtk_polydata)
+    transformed_points = transform_numpy_points(points_as_numpy, itk_transform)
+    set_numpy_points_in_vtk(vtk_polydata, transformed_points)
+    return
+
+def add_offset_to_itk_mesh(input_itk_mesh, offset):
+    points = itk.array_from_vector_container(input_itk_mesh.GetPoints())
+    points = points + offset
+    input_itk_mesh.SetPoints(itk.vector_container_from_array(points.flatten().astype('float32')))
+    return
+
+def add_offset_to_vtk_mesh(input_vtk_mesh, offset):
+    numpy_points = get_numpy_points_from_vtk(input_vtk_mesh)
+    numpy_points = numpy_points + offset
+    set_numpy_points_in_vtk(input_vtk_mesh, numpy_points)
+    return
+
 
 """
     Given the path of the meshes perform the registration.
@@ -517,7 +562,6 @@ def find_correspondences(feats0, feats1, mutual_filter=True):
         target: Mesh which needs to be landmarked.
         source: Atlas mesh which will be deformed to align it with target mesh.
 """
-
 
 def process(
     target,
@@ -580,53 +624,47 @@ def process(
     points_as_numpy = numpy_support.vtk_to_numpy(pointdata)
     points_as_numpy = points_as_numpy * scale_factor
 
-    vtk_data_array = numpy_support.numpy_to_vtk(
-        num_array=points_as_numpy, deep=True, array_type=vtk.VTK_FLOAT
-    )
-    points2 = vtk.vtkPoints()
-    points2.SetData(vtk_data_array)
-    vtk_meshes[1].SetPoints(points2)
+    set_numpy_points_in_vtk(vtk_meshes[1], points_as_numpy)
+    
+    # Zero center the meshes
+    vtk_mesh_offsets = []
+    for i, mesh in enumerate(vtk_meshes):
+        # Make all the points to positive coordinates
+        mesh_points = get_numpy_points_from_vtk(mesh)
+        vtk_mesh_offset = np.min(mesh_points, axis=0)
+        mesh_points = mesh_points - vtk_mesh_offset
+        set_numpy_points_in_vtk(mesh, mesh_points)
+        vtk_mesh_offsets.append(vtk_mesh_offset)
+
+    movingMesh = vtk_meshes[0]
+    fixedMesh = vtk_meshes[1]
 
     # Write back out to a filetype supported by ITK
-    vtk_paths = [path.strip(".ply") + ".vtk" for path in paths]
+    vtk_paths = [path.strip(".vtp") + ".vtk" for path in paths]
     for idx, mesh in enumerate(vtk_meshes):
+        casename = vtk_paths[idx].split('/')[-1].split('.')[0].split('_')[0]
+        if idx == 0:
+            write_path = WRITE_PATH + casename + '_movingMesh.vtk'
+        else:
+            write_path = WRITE_PATH + casename + '_fixedMesh.vtk'
+        print('Writing mesh ', write_path)
         writer = vtk.vtkPolyDataWriter()
         writer.SetInputData(mesh)
         writer.SetFileVersion(42)
         writer.SetFileTypeToBinary()
-        writer.SetFileName(vtk_paths[idx])
+        writer.SetFileName(write_path)
         writer.Update()
-
-    itk_meshes = [itk.meshread(path, pixel_type=itk.F) for path in vtk_paths]
-
-    # Zero center the meshes
-    itk_transformed_meshes = []
-    itk_transformed_landmarks = []
-    itk_images = []
-    for i, mesh in enumerate(itk_meshes):
-        # Make all the points to positive coordinates
-        mesh_points = itk.array_from_vector_container(mesh.GetPoints())
-        m = np.min(mesh_points, 0)  # - np.array([5, 5, 5], dtype=mesh_points.dtype)
-        mesh_points = mesh_points - m
-        mesh.SetPoints(itk.vector_container_from_array(mesh_points.flatten()))
-        itk_transformed_meshes.append(mesh)
-
-    fixedMesh = itk_transformed_meshes[0]
-    movingMesh = itk_transformed_meshes[1]
 
     # Write the cleaned Moment Initialized meshes
     movingMeshPath = WRITE_PATH + casename + "_movingMesh.vtk"
     fixedMeshPath = WRITE_PATH + casename + "_fixedMesh.vtk"
 
-    write_itk_mesh(fixedMesh, fixedMeshPath)
-    write_itk_mesh(movingMesh, movingMeshPath)
-
     # For performing RANSAC in parallel
     number_of_iterations = 50000
     transform_type = 0
 
-    movingMesh_vtk = readvtk(movingMeshPath)
-    fixedMesh_vtk = readvtk(fixedMeshPath)
+    movingMesh_vtk = read_vtk(movingMeshPath)
+    fixedMesh_vtk = read_vtk(fixedMeshPath)
 
     # Sub-Sample the points for rigid refinement and deformable registration
     # radius = 5.5 for gorilla
@@ -648,9 +686,6 @@ def process(
     # #movingMeshPoints, movingMeshPointNormals = extract_normal_from_tuple(movingMeshPoints)
     # #fixedMeshPoints, fixedMeshPointNormals = extract_normal_from_tuple(fixedMeshPoints)
 
-    fixed_xyz = fixedMeshPoints.T
-    moving_xyz = movingMeshPoints.T
-
     # np.save(WRITE_PATH + casename + '_fixedMesh_landmarks.npy', itk.array_from_vector_container(fixedLandmarkMesh.GetPoints()))
     # np.save(WRITE_PATH + casename + '_movingMesh_landmarks.npy', itk.array_from_vector_container(movingLandmarkMesh.GetPoints()))
 
@@ -658,11 +693,11 @@ def process(
     # np.save(WRITE_PATH + casename + '_fixedMeshPoints.npy', fixedMeshPoints)
 
     # New FPFH Code
-    pcS = np.expand_dims(fixed_xyz.T, -1)
+    pcS = np.expand_dims(fixedMeshPoints, -1)
     normal_np_pcl = fixedMeshPointNormals
     fixed_feats = get_fpfh_feature(pcS, normal_np_pcl, fpfh_radius, fpfh_neighbors)
 
-    pcS = np.expand_dims(moving_xyz.T, -1)
+    pcS = np.expand_dims(movingMeshPoints, -1)
     normal_np_pcl = movingMeshPointNormals
     moving_feats = get_fpfh_feature(pcS, normal_np_pcl, fpfh_radius, fpfh_neighbors)
 
@@ -671,8 +706,11 @@ def process(
         fixed_feats, moving_feats, mutual_filter=True
     )
 
-    fixed_corr = fixed_xyz[:, corrs_A]  # np array of size 3 by num_corrs
-    moving_corr = moving_xyz[:, corrs_B]  # np array of size 3 by num_corrs
+    fixedMeshPoints = fixedMeshPoints.T
+    movingMeshPoints = movingMeshPoints.T
+
+    fixed_corr = fixedMeshPoints[:, corrs_A]  # np array of size 3 by num_corrs
+    moving_corr = movingMeshPoints[:, corrs_B]  # np array of size 3 by num_corrs
 
     num_corrs = fixed_corr.shape[1]
     print(f"FPFH generates {num_corrs} putative correspondences.")
@@ -695,12 +733,20 @@ def process(
     print("Best Combination ", index, value)
     transform_matrix = itk.transform_from_dict(transform_matrix)
 
-    movingMesh_RANSAC = itk.transform_mesh_filter(
-        movingMesh, transform=transform_matrix
-    )
-    write_itk_mesh(movingMesh_RANSAC, WRITE_PATH + casename + "_movingMeshRANSAC.vtk")
+    #movingMesh_RANSAC = itk.transform_mesh_filter(
+    #    movingMesh, transform=transform_matrix
+    #)
+    
+    transform_points_in_vtk(movingMesh, transform_matrix)
+    write_vtk(movingMesh, WRITE_PATH + casename + "_movingMeshRANSAC.vtk")
+    
+    movingMeshPoints = movingMeshPoints.T
+    fixedMeshPoints = fixedMeshPoints.T
 
-    movingMeshPoints = transform_numpy_points(moving_xyz.T, transform_matrix)
+    print('movingMeshPoints.shape ', movingMeshPoints.shape)
+    print('fixedMeshPoints.shape ', fixedMeshPoints.shape)
+
+    movingMeshPoints = transform_numpy_points(movingMeshPoints, transform_matrix)
 
     print("Starting Rigid Refinement")
     print("Before Distance ", get_euclidean_distance(fixedMeshPoints, movingMeshPoints))
@@ -715,14 +761,14 @@ def process(
 
     print("After Distance ", get_euclidean_distance(fixedMeshPoints, final_mesh_points))
 
-    movingMesh_Rigid = itk.transform_mesh_filter(
-        movingMesh_RANSAC, transform=second_transform
-    )
-    write_itk_mesh(
-        movingMesh_Rigid, WRITE_PATH + casename + "_movingMeshRigidRegistered.vtk"
+    transform_points_in_vtk(movingMesh, second_transform)
+    #add_offset_to_vtk_mesh(movingMesh, vtk_mesh_offsets[1])
+    write_vtk(
+        movingMesh, WRITE_PATH + casename + "_movingMeshRigidRegistered.vtk"
     )
 
     print("Completed Rigid Refinement")
+    return
 
     # [STAR] Expectation Based PointSetToPointSetMetricv4 Registration
 
@@ -880,6 +926,8 @@ def process(
     movingMeshPath = WRITE_PATH + casename + "_movingMeshRigidRegistered.vtk"
     movingMesh = itk.meshread(movingMeshPath)
     movingMesh = itk.transform_mesh_filter(movingMesh, transform=final_transform)
+
+    add_offset_to_mesh(movingMesh, itk_mesh_offset)
     write_itk_mesh(movingMesh, WRITE_PATH + casename + "_movingMeshFinalRegistered.vtk")
     return
 
