@@ -22,14 +22,14 @@
       <label>Ransac Subset Points</label>
       <index>4</index>
       <description><![CDATA[Number of points to use in each RANSAC iteration]]></description>
-      <default>250</default>
+      <default>100</default>
     </integer>
     <double>
       <name>inlier_value</name>
       <label>RANSAC Inlier Value</label>
       <index>5</index>
       <description><![CDATA[Inlier threshold to determine Feature Matching]]></description>
-      <default>20.0</default>
+      <default>25.0</default>
     </double>
     <integer>
       <name>fpfh_radius</name>
@@ -72,6 +72,13 @@
       <index>11</index>
       <description><![CDATA[Number of iterations for Deformable Registration Step]]></description>
       <default>10000</default>
+    </integer>
+    <integer>
+      <name>ransac_iterations</name>
+      <label>RANSAC Iterations</label>
+      <index>12</index>
+      <description><![CDATA[Number of iterations for RANSAC]]></description>
+      <default>50000</default>
     </integer>
     <label>IO</label>
     <description><![CDATA[Input/output parameters]]></description>

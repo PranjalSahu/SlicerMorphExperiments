@@ -15,7 +15,8 @@ def main(
     deform_sigma,
     deform_neighbourhood,
     bspline_grid,
-    deformable_iterations
+    deformable_iterations,
+    ransac_iterations
 ):
     alpaca.process(
         target,
@@ -28,14 +29,15 @@ def main(
         deform_sigma,
         deform_neighbourhood,
         bspline_grid,
-        deformable_iterations
+        deformable_iterations,
+        ransac_iterations
     )
 
 
 if __name__ == "__main__":
     if len(sys.argv) < 4:
         print(
-            "Usage: ITKALPACA <target> <source> <subsample_radius> <number_of_ransac_points> <inlier_value> <fpfh_radius> <fpfh_neighbors> <deform_sigma> <deform_neighbourhood> <bspline_grid> <deformable_iterations>"
+            "Usage: ITKALPACA <target> <source> <subsample_radius> <number_of_ransac_points> <inlier_value> <fpfh_radius> <fpfh_neighbors> <deform_sigma> <deform_neighbourhood> <bspline_grid> <deformable_iterations> <ransac_iterations>"
         )
         sys.exit(1)
     print("Parameters are ")
@@ -50,11 +52,12 @@ if __name__ == "__main__":
     print("deform_neighbourhood : ", sys.argv[9])
     print("bspline_grid : ", int(sys.argv[10]))
     print("deformable_iterations : ", int(sys.argv[11]))
+    print("ransac_iterations : ", int(sys.argv[12]))
 
     main(
         target=sys.argv[1],
         source=sys.argv[2],
-        subsample_radius=int(sys.argv[3]),
+        subsample_radius=float(sys.argv[3]),
         number_of_ransac_points=int(sys.argv[4]),
         inlier_value=float(sys.argv[5]),
         fpfh_radius=int(sys.argv[6]),
@@ -62,5 +65,6 @@ if __name__ == "__main__":
         deform_sigma=float(sys.argv[8]),
         deform_neighbourhood=int(sys.argv[9]),
         bspline_grid=int(sys.argv[10]),
-        deformable_iterations=int(sys.argv[11])
+        deformable_iterations=int(sys.argv[11]),
+        ransac_iterations=int(sys.argv[12])
     )

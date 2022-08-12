@@ -147,6 +147,15 @@ def getnormals(inputmesh):
     normals.Update()
     return normals.GetOutput()
 
+# def getnormals_pcl(inputPoints):
+#     import open3d as o3d
+#     A_pcd = o3d.geometry.PointCloud()
+#     A_pcd.points = o3d.utility.Vector3dVector(inputPoints)
+#     voxel_size = 5
+#     radius_normal = voxel_size * 2
+#     A_pcd.estimate_normals(
+#         o3d.geometry.KDTreeSearchParamHybrid(radius=radius_normal, max_nn=30))
+#     return np.array(A_pcd.normals)
 
 def getnormals_pca(movingMesh):
     """
@@ -246,18 +255,13 @@ def final_iteration(fixedPoints, movingPoints, transform_type):
 
 
 # RANSAC with VTK Landmark Transform
-def ransac_icp_parallel_vtk(
-    movingMeshPoints,
-    fixedMeshPoints,
-    number_of_iterations,
-    mesh_sub_sample_points,
-    number_of_ransac_points,
-    transform_type,
-    inlier_value,
-):
-    """
-    Perform Ransac by doing parallel iterations for different samples.
-    """
+def ransac_icp_parallel_vtk(movingMeshPoints, fixedMeshPoints,
+                        number_of_iterations,
+                        number_of_ransac_points, transform_type,
+                        inlier_value):
+    '''
+        Perform Ransac by doing parallel iterations for different samples.
+    '''
     import numpy as np
 
     np.random.seed(0)
@@ -267,7 +271,6 @@ def ransac_icp_parallel_vtk(
 
     def process_task(
         i,
-        mesh_sub_sample_points,
         number_of_ransac_points,
         return_result,
         inlier_points=None,
@@ -276,7 +279,6 @@ def ransac_icp_parallel_vtk(
         Args:
             i: input seed used to sample the points.
             number_of_ransac_points: Number of random points selected to perform the registration.
-            mesh_sub_sample_points: Number of points used to calculate the Euclidean distance for entire mesh.
             return_result: Whether to return the transformed mesh.
 
         Returns: (Best Value, seed) or the transformed_points depending on return_result flag.
@@ -382,7 +384,7 @@ def ransac_icp_parallel_vtk(
     results = []
     for i in range(number_of_iterations):
         results.append(
-            process_task(i, mesh_sub_sample_points, number_of_ransac_points, 0)
+            process_task(i, number_of_ransac_points, 0)
         )
 
     # results = Parallel(n_jobs=-1)(
@@ -398,7 +400,7 @@ def ransac_icp_parallel_vtk(
     value = results_values[index]
 
     final_result = process_task(
-        index, mesh_sub_sample_points, number_of_ransac_points, 1, results[index][1]
+        index, number_of_ransac_points, 1, results[index][1]
     )
 
     return final_result, index, value
@@ -499,16 +501,17 @@ def find_knn_cpu(feat0, feat1, knn=1, return_distance=False):
 
 def find_correspondences(feats0, feats1, mutual_filter=True):
     # Remove cases by filtering using some threshold
-    nns01 = find_knn_cpu(feats0, feats1, knn=1, return_distance=False)
+    nns01, dists1 = find_knn_cpu(feats0, feats1, knn=1, return_distance=True)
     corres01_idx0 = np.arange(len(nns01))
     corres01_idx1 = nns01
-
+    
     if not mutual_filter:
         return corres01_idx0, corres01_idx1
 
-    nns10 = find_knn_cpu(feats1, feats0, knn=1, return_distance=False)
+    nns10, dists2 = find_knn_cpu(feats1, feats0, knn=1, return_distance=True)
     corres10_idx1 = np.arange(len(nns10))
     corres10_idx0 = nns10
+
 
     mutual_filter = corres10_idx0[corres01_idx1] == corres01_idx0
     corres_idx0 = corres01_idx0[mutual_filter]
@@ -574,7 +577,8 @@ def process(
     deform_sigma,
     deform_neighbourhood,
     bspline_grid,
-    deformable_iterations
+    deformable_iterations,
+    ransac_iterations
 ):
     # import joblib
     # print('Pranjal ', joblib)
@@ -660,27 +664,38 @@ def process(
     fixedMeshPath = WRITE_PATH + casename + "_fixedMesh.vtk"
 
     # For performing RANSAC in parallel
-    number_of_iterations = 50000
     transform_type = 0
 
     movingMesh_vtk = read_vtk(movingMeshPath)
     fixedMesh_vtk = read_vtk(fixedMeshPath)
 
+    movingMesh_vtk = getnormals(movingMesh_vtk)
+    fixedMesh_vtk = getnormals(fixedMesh_vtk)
+
+    # For performing RANSAC in parallel
     # Sub-Sample the points for rigid refinement and deformable registration
     # radius = 5.5 for gorilla
     # radius = 4.5 for Pan
     # radius = 4 for Pongo
-    movingMeshPoints = subsample_points_poisson(movingMesh_vtk, radius=subsample_radius)
-    fixedMeshPoints = subsample_points_poisson(fixedMesh_vtk, radius=subsample_radius)
+    
+    movingMesh_vtk = subsample_points_poisson_polydata(movingMesh_vtk, radius=subsample_radius)
+    fixedMesh_vtk  = subsample_points_poisson_polydata(fixedMesh_vtk, radius=subsample_radius)
 
-    movingMeshPoints = numpy_to_vtk_polydata(movingMeshPoints)
-    fixedMeshPoints = numpy_to_vtk_polydata(fixedMeshPoints)
+    movingMeshPoints, movingMeshPointNormals = extract_normal_from_tuple(movingMesh_vtk)
+    fixedMeshPoints, fixedMeshPointNormals = extract_normal_from_tuple(fixedMesh_vtk)
 
-    movingMeshPointNormals = getnormals_pca(movingMeshPoints)
-    fixedMeshPointNormals = getnormals_pca(fixedMeshPoints)
+    print('movingMeshPoints.shape ', movingMeshPoints.shape)
+    print('movingMeshPointNormals.shape ', movingMeshPointNormals.shape)
+    print('fixedMeshPoints.shape ', fixedMeshPoints.shape)
+    print('fixedMeshPointNormals.shape ', fixedMeshPointNormals.shape)
+    #movingMeshPoints = numpy_to_vtk_polydata(movingMeshPoints)
+    #fixedMeshPoints = numpy_to_vtk_polydata(fixedMeshPoints)
 
-    movingMeshPoints = vtk_points_to_numpy(movingMeshPoints)
-    fixedMeshPoints = vtk_points_to_numpy(fixedMeshPoints)
+    #movingMeshPointNormals = getnormals_pca(movingMeshPoints)
+    #fixedMeshPointNormals = getnormals_pca(fixedMeshPoints)
+
+    #movingMeshPoints = vtk_points_to_numpy(movingMeshPoints)
+    #fixedMeshPoints = vtk_points_to_numpy(fixedMeshPoints)
 
     # # Obtain normals from the sub-sampled points
     # #movingMeshPoints, movingMeshPointNormals = extract_normal_from_tuple(movingMeshPoints)
@@ -723,8 +738,7 @@ def process(
     transform_matrix, index, value = ransac_icp_parallel_vtk(
         movingMeshPoints=moving_corr.T,
         fixedMeshPoints=fixed_corr.T,
-        number_of_iterations=20000,
-        mesh_sub_sample_points=500,
+        number_of_iterations=ransac_iterations,
         number_of_ransac_points=number_of_ransac_points,
         transform_type=3,
         inlier_value=inlier_value,
