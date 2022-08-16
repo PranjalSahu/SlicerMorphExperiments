@@ -12,6 +12,10 @@ The overall goal is to ultimately help with:
 
 [KitwareMedical]: https://www.kitware.com/teams/medical-computing
 
+Command to run the extension with Slicer
+```
+./Slicer --additional-module-path /data/SlicerMorph/slicermorphextension/ITKALPACA/ITKALPACA/
+```
 
 ## Frequently asked questions
 
