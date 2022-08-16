@@ -2,7 +2,8 @@
 
 import sys
 import script_FPFH_RANSAC_Deform as alpaca
-
+import slicer
+from slicer import util
 
 def main(
     target,
@@ -53,6 +54,10 @@ if __name__ == "__main__":
     print("bspline_grid : ", int(sys.argv[10]))
     print("deformable_iterations : ", int(sys.argv[11]))
     print("ransac_iterations : ", int(sys.argv[12]))
+
+    slicer.util.pip_install(f'cpdalp')
+    import cpdalp
+    print('Importing of cpdalp done')
 
     main(
         target=sys.argv[1],
