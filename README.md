@@ -23,6 +23,11 @@ Command to run the extension with Slicer
 ./Slicer --additional-module-path /data/SlicerMorph/slicermorphextension/ITKALPACA/ITKALPACA/
 ```
 
+All the result outputs are written at this path:
+```
+WRITE_PATH = "/data/Apedata/Slicer-cli-outputs/"
+```
+
 ## Frequently asked questions
 
 ### What define an experiment and where are they organized ?
