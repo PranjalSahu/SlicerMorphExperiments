@@ -15,7 +15,7 @@
       <label>PointSet Subsample Radius</label>
       <index>3</index>
       <description><![CDATA[Radius used to sub-sample points from full resolution pointset]]></description>
-      <default>5.0</default>
+      <default>4.5</default>
     </double>
     <integer>
       <name>number_of_ransac_points</name>
@@ -29,7 +29,7 @@
       <label>RANSAC Inlier Value</label>
       <index>5</index>
       <description><![CDATA[Inlier threshold to determine Feature Matching]]></description>
-      <default>25.0</default>
+      <default>20.0</default>
     </double>
     <integer>
       <name>fpfh_radius</name>
@@ -80,6 +80,20 @@
       <description><![CDATA[Number of iterations for RANSAC]]></description>
       <default>50000</default>
     </integer>
+    <double>
+      <name>alpha_parameter</name>
+      <label>Alpha Parameter</label>
+      <index>13</index>
+      <description><![CDATA[Alpha Parameter]]></description>
+      <default>0.1</default>
+    </double>
+     <double>
+      <name>beta_parameter</name>
+      <label>Beta Parameter</label>
+      <index>14</index>
+      <description><![CDATA[Beta Parameter]]></description>
+      <default>20.0</default>
+    </double>
     <label>IO</label>
     <description><![CDATA[Input/output parameters]]></description>
     <geometry>

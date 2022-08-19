@@ -28,7 +28,6 @@ from cpdalp import DeformableRegistration
 
 # Install Dependencies using
 # /home/pranjal.sahu/Downloads/Slicer-5.0.3-linux-amd64/bin/PythonSlicer -m pip install --prefix=/data/SlicerMorph/ITKALPACA-python-dependencies itk==5.3rc4
-# /home/pranjal.sahu/Downloads/Slicer-5.0.3-linux-amd64/bin/PythonSlicer -m pip install --prefix=/data/SlicerMorph/ITKALPACA-python-dependencies joblib
 # python -m pip install -U --no-deps --prefix=/data/SlicerMorph/ITKALPACA-python-dependencies /data/SlicerMorph/LinuxWheel39_fpfh_5.3rc4_again/itk_fpfh-0.1.0-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl --no-cache-dir
 
 
@@ -41,6 +40,8 @@ def cpd_registration(
     beta_parameter,
 ):
     from cpdalp import DeformableRegistration
+    
+    print("Before Deformable Distance ", get_euclidean_distance(targetArray, sourceArray))
 
     output = DeformableRegistration(
         **{
@@ -53,7 +54,10 @@ def cpd_registration(
         alpha=alpha_parameter,
         beta=beta_parameter,
     )
-    return output
+    deformed_array, _ = output.register()
+
+    print("After Deformable Distance ", get_euclidean_distance(targetArray, deformed_array))
+    return deformed_array
 
 
 def get_euclidean_distance(input_fixedPoints, input_movingPoints):
@@ -481,8 +485,8 @@ def get_fpfh_feature(points_np, normals_np, radius, neighbors):
 def get_euclidean_distance(fixed_points_np, moving_points_np):
     fixed_mesh = itk.Mesh[itk.D, 3].New()
     moving_mesh = itk.Mesh[itk.D, 3].New()
-    fixed_mesh.SetPoints(itk.vector_container_from_array(fixed_points_np.flatten()))
-    moving_mesh.SetPoints(itk.vector_container_from_array(moving_points_np.flatten()))
+    fixed_mesh.SetPoints(itk.vector_container_from_array(fixed_points_np.flatten().astype('float32')))
+    moving_mesh.SetPoints(itk.vector_container_from_array(moving_points_np.flatten().astype('float32')))
     MetricType = itk.EuclideanDistancePointSetToPointSetMetricv4.PSD3
     metric = MetricType.New()
     metric.SetMovingPointSet(moving_mesh)
@@ -619,9 +623,9 @@ def process(
     bspline_grid,
     deformable_iterations,
     ransac_iterations,
+    alpha_parameter,
+    beta_parameter
 ):
-    # import joblib
-    # print('Pranjal ', joblib)
     casename = source.split("/")[-1].split(".")[0]
     paths = [target, source]
 
@@ -825,6 +829,20 @@ def process(
 
     print("Completed Rigid Refinement")
     
+    CPDIterations = deformable_iterations
+    CPDTolerance = 0.001
+    outputArray = cpd_registration(fixedMeshPoints,
+        final_mesh_points,
+        CPDIterations,
+        CPDTolerance,
+        alpha_parameter,
+        beta_parameter)
+    
+    print('CPD Result ', outputArray.shape)
+
+    np.save(WRITE_PATH + "cpdResult.npy", outputArray)
+    return
+
     # [STAR] Expectation Based PointSetToPointSetMetricv4 Registration
 
     imageDiagonal = 100
@@ -980,11 +998,8 @@ def process(
     # Write the final registered mesh
     movingMeshPath = WRITE_PATH + casename + "_movingMeshRigidRegistered.vtk"
     print('movingMeshPath is ', movingMeshPath)
-    #movingMesh = itk.meshread(movingMeshPath, itk.F)
-    return
+    movingMesh = itk.meshread(movingMeshPath, itk.F)
     movingMesh = itk.transform_mesh_filter(movingMesh, transform=final_transform)
-
-    return
     #add_offset_to_itk_mesh(movingMesh, itk_mesh_offset)
     write_itk_mesh(movingMesh, WRITE_PATH + casename + "_movingMeshFinalRegistered.vtk")
     return
