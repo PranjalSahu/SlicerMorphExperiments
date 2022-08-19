@@ -26,7 +26,15 @@ Command to run the extension with Slicer
 All the result outputs are written at this path:
 ```
 WRITE_PATH = "/data/Apedata/Slicer-cli-outputs/"
+Initial meshes after clearning operation are stored with files ending with "movingMesh.vtk" and "fixedMesh.vtk".
+Output file after RANSAC step ends with "movingMeshRigidRegistered.vtk"
+Output file after Rigid refinement ends with "movingMeshRigidRegistered.vtk"
+Output file after CPD registration ends with "cpdResult.npy"
+FPFH matches are stored in numpy files ending with "_corr.npy"
 ```
+
+
+
 
 ## Frequently asked questions
 
