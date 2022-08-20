@@ -71,7 +71,7 @@
       <label>Deformable Iterations</label>
       <index>11</index>
       <description><![CDATA[Number of iterations for Deformable Registration Step]]></description>
-      <default>10000</default>
+      <default>100</default>
     </integer>
     <integer>
       <name>ransac_iterations</name>
@@ -103,12 +103,19 @@
       <index>0</index>
       <description><![CDATA[Target Mesh]]></description>
     </geometry>
-    <geometry reference="inputVolume">
+    <geometry>
       <name>sourceMesh</name>
       <label>Source Mesh</label>
       <channel>input</channel>
       <index>1</index>
       <description><![CDATA[Source Mesh]]></description>
     </geometry>
+    <string>
+      <name>inputLandmarks</name>
+      <label>Input Landmarks</label>
+      <channel>input</channel>
+      <index>15</index>
+      <description><![CDATA[Input Landmarks]]></description>
+    </string>
   </parameters>
 </executable>

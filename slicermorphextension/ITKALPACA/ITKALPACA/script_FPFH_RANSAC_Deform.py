@@ -520,7 +520,7 @@ def vtk_points_to_numpy(input_vtk_points):
 
 def transform_numpy_points(points_np, transform):
     mesh = itk.Mesh[itk.F, 3].New()
-    mesh.SetPoints(itk.vector_container_from_array(points_np.flatten()))
+    mesh.SetPoints(itk.vector_container_from_array(points_np.flatten().astype('float32')))
     transformed_mesh = itk.transform_mesh_filter(mesh, transform=transform)
     points_tranformed = itk.array_from_vector_container(transformed_mesh.GetPoints())
     points_tranformed = np.reshape(points_tranformed, [-1, 3])
@@ -624,8 +624,12 @@ def process(
     deformable_iterations,
     ransac_iterations,
     alpha_parameter,
-    beta_parameter
+    beta_parameter,
+    landmark_file
 ):
+    landmark_points = read_landmarks(landmark_file)
+    print('Landmark points are ', landmark_points.shape)
+
     casename = source.split("/")[-1].split(".")[0]
     paths = [target, source]
 
@@ -672,6 +676,7 @@ def process(
     points_as_numpy = numpy_support.vtk_to_numpy(pointdata)
     points_as_numpy = points_as_numpy * scale_factor
 
+    landmark_points = landmark_points * scale_factor
     set_numpy_points_in_vtk(vtk_meshes[1], points_as_numpy)
 
     # Zero center the meshes
@@ -684,6 +689,7 @@ def process(
         set_numpy_points_in_vtk(mesh, mesh_points)
         vtk_mesh_offsets.append(vtk_mesh_offset)
 
+    landmark_points = landmark_points - vtk_mesh_offsets[1]
     movingMesh = vtk_meshes[0]
     fixedMesh = vtk_meshes[1]
 
@@ -736,25 +742,7 @@ def process(
     print("movingMeshPointNormals.shape ", movingMeshPointNormals.shape)
     print("fixedMeshPoints.shape ", fixedMeshPoints.shape)
     print("fixedMeshPointNormals.shape ", fixedMeshPointNormals.shape)
-    # movingMeshPoints = numpy_to_vtk_polydata(movingMeshPoints)
-    # fixedMeshPoints = numpy_to_vtk_polydata(fixedMeshPoints)
-
-    # movingMeshPointNormals = getnormals_pca(movingMeshPoints)
-    # fixedMeshPointNormals = getnormals_pca(fixedMeshPoints)
-
-    # movingMeshPoints = vtk_points_to_numpy(movingMeshPoints)
-    # fixedMeshPoints = vtk_points_to_numpy(fixedMeshPoints)
-
-    # # Obtain normals from the sub-sampled points
-    # #movingMeshPoints, movingMeshPointNormals = extract_normal_from_tuple(movingMeshPoints)
-    # #fixedMeshPoints, fixedMeshPointNormals = extract_normal_from_tuple(fixedMeshPoints)
-
-    # np.save(WRITE_PATH + casename + '_fixedMesh_landmarks.npy', itk.array_from_vector_container(fixedLandmarkMesh.GetPoints()))
-    # np.save(WRITE_PATH + casename + '_movingMesh_landmarks.npy', itk.array_from_vector_container(movingLandmarkMesh.GetPoints()))
-
-    # np.save(WRITE_PATH + casename + '_movingMeshPoints.npy', movingMeshPoints)
-    # np.save(WRITE_PATH + casename + '_fixedMeshPoints.npy', fixedMeshPoints)
-
+    
     # New FPFH Code
     pcS = np.expand_dims(fixedMeshPoints, -1)
     normal_np_pcl = fixedMeshPointNormals
@@ -808,6 +796,7 @@ def process(
     print("movingMeshPoints.shape ", movingMeshPoints.shape)
     print("fixedMeshPoints.shape ", fixedMeshPoints.shape)
 
+    landmark_points = transform_numpy_points(landmark_points, transform_matrix)
     movingMeshPoints = transform_numpy_points(movingMeshPoints, transform_matrix)
 
     print("Starting Rigid Refinement")
@@ -817,22 +806,26 @@ def process(
     final_mesh_points, second_transform = final_iteration(
         fixedMeshPoints, movingMeshPoints, transform_type
     )
-    np.save(WRITE_PATH + "fixedMeshPoints.npy", fixedMeshPoints)
-    np.save(WRITE_PATH + "movingMeshPoints.npy", movingMeshPoints)
-    np.save(WRITE_PATH + "final_mesh_points.npy", final_mesh_points)
+    np.save(WRITE_PATH + casename+"_fixedMeshPoints.npy", fixedMeshPoints)
+    np.save(WRITE_PATH + casename+"_movingMeshPoints.npy", movingMeshPoints)
+    np.save(WRITE_PATH + casename+"_final_mesh_points.npy", final_mesh_points)
 
     print("After Distance ", get_euclidean_distance(fixedMeshPoints, final_mesh_points))
 
+    landmark_points = transform_numpy_points(landmark_points, second_transform)
     transform_points_in_vtk(movingMesh, second_transform)
     # add_offset_to_vtk_mesh(movingMesh, vtk_mesh_offsets[1])
     write_vtk(movingMesh, WRITE_PATH + casename + "_movingMeshRigidRegistered.vtk")
 
     print("Completed Rigid Refinement")
     
+    combined_points = np.concatenate([landmark_points, final_mesh_points], axis=0)
+    print('Combined points shape ', combined_points.shape, landmark_points.shape, final_mesh_points.shape)
+
     CPDIterations = deformable_iterations
     CPDTolerance = 0.001
     outputArray = cpd_registration(fixedMeshPoints,
-        final_mesh_points,
+        combined_points,
         CPDIterations,
         CPDTolerance,
         alpha_parameter,
@@ -840,7 +833,8 @@ def process(
     
     print('CPD Result ', outputArray.shape)
 
-    np.save(WRITE_PATH + "cpdResult.npy", outputArray)
+    np.save(WRITE_PATH + casename + "_cpdResultLandmarks.npy", outputArray[:landmark_points.shape[0], :])
+    np.save(WRITE_PATH + casename + "_cpdResult.npy", outputArray[landmark_points.shape[0]:, :])
     return
 
     # [STAR] Expectation Based PointSetToPointSetMetricv4 Registration

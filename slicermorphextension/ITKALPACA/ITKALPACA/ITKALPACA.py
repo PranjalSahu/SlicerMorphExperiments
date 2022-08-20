@@ -19,7 +19,8 @@ def main(
     deformable_iterations,
     ransac_iterations,
     alpha_parameter,
-    beta_parameter
+    beta_parameter,
+    landmark_file
 ):
     alpaca.process(
         target,
@@ -35,7 +36,8 @@ def main(
         deformable_iterations,
         ransac_iterations,
         alpha_parameter,
-        beta_parameter
+        beta_parameter,
+        landmark_file
     )
 
 
@@ -60,6 +62,7 @@ if __name__ == "__main__":
     print("ransac_iterations : ", int(sys.argv[12]))
     print("alpha_parameter : ", float(sys.argv[13]))
     print("beta_parameter : ", float(sys.argv[14]))
+    print("landmark_file : ", sys.argv[15])
 
     slicer.util.pip_install(f'cpdalp')
     import cpdalp
@@ -79,5 +82,6 @@ if __name__ == "__main__":
         deformable_iterations=int(sys.argv[11]),
         ransac_iterations=int(sys.argv[12]),
         alpha_parameter=float(sys.argv[13]),
-        beta_parameter=float(sys.argv[14])
+        beta_parameter=float(sys.argv[14]),
+        landmark_file=sys.argv[15]
     )
