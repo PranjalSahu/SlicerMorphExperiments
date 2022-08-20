@@ -16,14 +16,11 @@ import numpy as np
 import vtk
 import itk
 import math
-import joblib
-from joblib import Parallel, delayed
 import time
 import copy
 from vtk.util import numpy_support
 from vtk.util.numpy_support import numpy_to_vtk
 from scipy.spatial import cKDTree
-import cpdalp
 from cpdalp import DeformableRegistration
 
 # Install Dependencies using
@@ -39,8 +36,6 @@ def cpd_registration(
     alpha_parameter,
     beta_parameter,
 ):
-    from cpdalp import DeformableRegistration
-    
     print("Before Deformable Distance ", get_euclidean_distance(targetArray, sourceArray))
 
     output = DeformableRegistration(
