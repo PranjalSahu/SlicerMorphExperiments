@@ -11,6 +11,7 @@ import sys
 sys.path.insert(
     0, "/data/SlicerMorph/ITKALPACA-python-dependencies/lib/python3.9/site-packages/"
 )
+WRITE_PATH = "/data/Apedata/Slicer-cli-outputs/"
 
 import numpy as np
 import vtk
@@ -102,8 +103,11 @@ def subsample_points_poisson(inputMesh, radius=4.5):
     return as_numpy
 
 
-# Returns vtk points so that it has normal data also in it
 def subsample_points_poisson_polydata(inputMesh, radius):
+    '''
+        Subsamples the points and returns vtk points so 
+        that it has normal data also in it.
+    '''
     import vtk
     from vtk.util import numpy_support
 
@@ -208,7 +212,8 @@ def getnormals_pca(movingMesh):
 
 def extract_normal_from_tuple(input_mesh):
     """
-    Extracts the normal data from the sampled points
+    Extracts the normal data from the sampled points.
+    Returns points and normals for the points.
     """
     t1 = input_mesh.GetPointData().GetArray("Normals")
     n1_array = []
@@ -628,7 +633,6 @@ def process(
     casename = source.split("/")[-1].split(".")[0]
     paths = [target, source]
 
-    WRITE_PATH = "/data/Apedata/Slicer-cli-outputs/"
     # Write the meshes in vtk format so that they can be read in ITK
     vtk_meshes = list()
 
