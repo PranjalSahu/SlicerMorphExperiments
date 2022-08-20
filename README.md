@@ -12,26 +12,26 @@ The overall goal is to ultimately help with:
 
 [KitwareMedical]: https://www.kitware.com/teams/medical-computing
 
+### Install Dependencies using
 ```
-# Install Dependencies using
 # /home/pranjal.sahu/Downloads/Slicer-5.0.3-linux-amd64/bin/PythonSlicer -m pip install --prefix=/data/SlicerMorph/ITKALPACA-python-dependencies itk==5.3rc4
 # python -m pip install -U --no-deps --prefix=/data/SlicerMorph/ITKALPACA-python-dependencies /data/SlicerMorph/LinuxWheel39_fpfh_5.3rc4_again/itk_fpfh-0.1.0-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl --no-cache-dir
 
 ```
-Command to run the extension with Slicer
+
+### Command to run the extension with Slicer
 ```
 ./Slicer --additional-module-path /data/SlicerMorph/slicermorphextension/ITKALPACA/ITKALPACA/
 ```
 
-All the result outputs are written at this path:
-```
-WRITE_PATH = "/data/Apedata/Slicer-cli-outputs/"
-Initial meshes after clearning operation are stored with files ending with "movingMesh.vtk" and "fixedMesh.vtk".
-Output file after RANSAC step ends with "movingMeshRANSAC.vtk"
-Output file after Rigid refinement ends with "movingMeshRigidRegistered.vtk"
-Output file after CPD registration ends with "cpdResult.npy"
-FPFH matches are stored in numpy files ending with "_corr.npy"
-```
+### All the result outputs are written at this path: WRITE_PATH = "/data/Apedata/Slicer-cli-outputs/"
+
+1. Initial meshes after cleaning operation are stored with files ending with "movingMesh.vtk" and "fixedMesh.vtk".
+2. Output file after RANSAC step ends with "movingMeshRANSAC.vtk"
+3. Output file after Rigid refinement ends with "movingMeshRigidRegistered.vtk"
+4. Output file after CPD registration ends with "cpdResult.npy"
+5. FPFH matches are stored in numpy files ending with "_corr.npy"
+6. Transformed landmark points are stored in the numpy file ending with "_cpdResultLandmarks.npy"
 
 
 
