@@ -7,6 +7,7 @@
 
 from re import A
 import sys
+import slicer
 
 sys.path.insert(
     0, "/data/SlicerMorph/ITKALPACA-python-dependencies/lib/python3.9/site-packages/"
@@ -28,6 +29,26 @@ from cpdalp import DeformableRegistration
 # /home/pranjal.sahu/Downloads/Slicer-5.0.3-linux-amd64/bin/PythonSlicer -m pip install --prefix=/data/SlicerMorph/ITKALPACA-python-dependencies itk==5.3rc4
 # python -m pip install -U --no-deps --prefix=/data/SlicerMorph/ITKALPACA-python-dependencies /data/SlicerMorph/LinuxWheel39_fpfh_5.3rc4_again/itk_fpfh-0.1.0-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl --no-cache-dir
 
+def getFiducialPoints(fiducialNumpyPoints):
+    points = vtk.vtkPoints()
+    for i in range(fiducialNumpyPoints.shape[0]):
+      point = fiducialNumpyPoints[i]
+      points.InsertNextPoint(point)
+    return points
+
+def applyTPSTransform(sourcePoints, targetPoints, inputPolyData, nodeName):
+    transform = vtk.vtkThinPlateSplineTransform()
+    transform.SetSourceLandmarks( sourcePoints)
+    transform.SetTargetLandmarks( targetPoints )
+    transform.SetBasisToR() # for 3D transform
+
+    transformFilter = vtk.vtkTransformPolyDataFilter()
+    transformFilter.SetInputData(inputPolyData)
+    transformFilter.SetTransform(transform)
+    transformFilter.Update()
+
+    warpedPolyData = transformFilter.GetOutput()
+    return warpedPolyData
 
 def cpd_registration(
     targetArray,
@@ -834,6 +855,13 @@ def process(
 
     np.save(WRITE_PATH + casename + "_cpdResultLandmarks.npy", outputArray[:landmark_points.shape[0], :])
     np.save(WRITE_PATH + casename + "_cpdResult.npy", outputArray[landmark_points.shape[0]:, :])
+
+    outputPoints_vtk = getFiducialPoints(outputArray[:landmark_points.shape[0], :])
+    inputPoints_vtk = getFiducialPoints(landmark_points)
+
+    nodeName = 'TPS Warped Model'
+    warpedModel = applyTPSTransform(inputPoints_vtk, outputPoints_vtk, movingMesh, nodeName)
+    write_vtk(warpedModel, WRITE_PATH + casename + "_movingMeshFinalRegistered.vtk")
     return
 
     # [STAR] Expectation Based PointSetToPointSetMetricv4 Registration

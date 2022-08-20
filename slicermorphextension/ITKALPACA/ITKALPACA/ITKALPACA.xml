@@ -71,7 +71,7 @@
       <label>Deformable Iterations</label>
       <index>11</index>
       <description><![CDATA[Number of iterations for Deformable Registration Step]]></description>
-      <default>100</default>
+      <default>50</default>
     </integer>
     <integer>
       <name>ransac_iterations</name>
