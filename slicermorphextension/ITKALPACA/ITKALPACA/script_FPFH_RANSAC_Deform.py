@@ -50,6 +50,70 @@ def applyTPSTransform(sourcePoints, targetPoints, inputPolyData, nodeName):
     warpedPolyData = transformFilter.GetOutput()
     return warpedPolyData
 
+def projectPointsPolydata(sourcePolydata, targetPolydata, originalPoints, rayLength):
+    print("original points: ", originalPoints.GetNumberOfPoints())
+    #set up polydata for projected points to return
+    projectedPointData = vtk.vtkPolyData()
+    projectedPoints = vtk.vtkPoints()
+    projectedPointData.SetPoints(projectedPoints)
+
+    #set up locater for intersection with normal vector rays
+    obbTree = vtk.vtkOBBTree()
+    obbTree.SetDataSet(targetPolydata)
+    obbTree.BuildLocator()
+
+    #set up point locator for finding surface normals and closest point
+    pointLocator = vtk.vtkPointLocator()
+    pointLocator.SetDataSet(sourcePolydata)
+    pointLocator.BuildLocator()
+
+    targetPointLocator = vtk.vtkPointLocator()
+    targetPointLocator.SetDataSet(targetPolydata)
+    targetPointLocator.BuildLocator()
+
+    #get surface normal from each landmark point
+    rayDirection=[0,0,0]
+    normalArray = sourcePolydata.GetPointData().GetArray("Normals")
+    if(not normalArray):
+      print("no normal array, calculating....")
+      normalFilter=vtk.vtkPolyDataNormals()
+      normalFilter.ComputePointNormalsOn()
+      normalFilter.SetInputData(sourcePolydata)
+      normalFilter.Update()
+      normalArray = normalFilter.GetOutput().GetPointData().GetArray("Normals")
+      if(not normalArray):
+        print("Error: no normal array")
+        return projectedPointData
+    for index in range(originalPoints.GetNumberOfPoints()):
+      originalPoint= originalPoints.GetPoint(index)
+      # get ray direction from closest normal
+      closestPointId = pointLocator.FindClosestPoint(originalPoint)
+      rayDirection = normalArray.GetTuple(closestPointId)
+      rayEndPoint=[0,0,0]
+      for dim in range(len(rayEndPoint)):
+        rayEndPoint[dim] = originalPoint[dim] + rayDirection[dim]* rayLength
+      intersectionIds=vtk.vtkIdList()
+      intersectionPoints=vtk.vtkPoints()
+      obbTree.IntersectWithLine(originalPoint,rayEndPoint,intersectionPoints,intersectionIds)
+      #if there are intersections, update the point to most external one.
+      if intersectionPoints.GetNumberOfPoints() > 0:
+        exteriorPoint = intersectionPoints.GetPoint(intersectionPoints.GetNumberOfPoints()-1)
+        projectedPoints.InsertNextPoint(exteriorPoint)
+      #if there are no intersections, reverse the normal vector
+      else:
+        for dim in range(len(rayEndPoint)):
+          rayEndPoint[dim] = originalPoint[dim] + rayDirection[dim]* -rayLength
+        obbTree.IntersectWithLine(originalPoint,rayEndPoint,intersectionPoints,intersectionIds)
+        if intersectionPoints.GetNumberOfPoints()>0:
+          exteriorPoint = intersectionPoints.GetPoint(0)
+          projectedPoints.InsertNextPoint(exteriorPoint)
+        #if none in reverse direction, use closest mesh point
+        else:
+          closestPointId = targetPointLocator.FindClosestPoint(originalPoint)
+          rayOrigin = targetPolydata.GetPoint(closestPointId)
+          projectedPoints.InsertNextPoint(rayOrigin)
+    return projectedPointData
+
 def cpd_registration(
     targetArray,
     sourceArray,
@@ -59,6 +123,10 @@ def cpd_registration(
     beta_parameter,
 ):
     print("Before Deformable Distance ", get_euclidean_distance(targetArray, sourceArray))
+
+    cloudSize = np.max(targetArray, 0) - np.min(targetArray)
+    targetArray = targetArray*25/cloudSize
+    sourceArray = sourceArray*25/cloudSize
 
     output = DeformableRegistration(
         **{
@@ -72,6 +140,8 @@ def cpd_registration(
         beta=beta_parameter,
     )
     deformed_array, _ = output.register()
+    deformed_array = deformed_array*cloudSize/25
+    targetArray = targetArray*cloudSize/25
 
     print("After Deformable Distance ", get_euclidean_distance(targetArray, deformed_array))
     return deformed_array
@@ -145,6 +215,7 @@ def write_vtk(vtk_polydata, filename):
     a.SetFileName(filename)
     a.SetInputData(vtk_polydata)
     a.SetFileVersion(42)
+    a.SetFileTypeToBinary()
     a.Update()
     return
 
@@ -722,12 +793,7 @@ def process(
         else:
             write_path = WRITE_PATH + casename + "_fixedMesh.vtk"
         print("Writing mesh ", write_path)
-        writer = vtk.vtkPolyDataWriter()
-        writer.SetInputData(mesh)
-        writer.SetFileVersion(42)
-        writer.SetFileTypeToBinary()
-        writer.SetFileName(write_path)
-        writer.Update()
+        write_vtk(mesh, write_path)
 
     # Write the cleaned Moment Initialized meshes
     movingMeshPath = WRITE_PATH + casename + "_movingMesh.vtk"
@@ -739,8 +805,8 @@ def process(
     movingMesh_vtk = read_vtk(movingMeshPath)
     fixedMesh_vtk = read_vtk(fixedMeshPath)
 
-    movingMesh_vtk = getnormals(movingMesh_vtk)
-    fixedMesh_vtk = getnormals(fixedMesh_vtk)
+    movingFullMesh_vtk = getnormals(movingMesh_vtk)
+    fixedFullMesh_vtk = getnormals(fixedMesh_vtk)
 
     # For performing RANSAC in parallel
     # Sub-Sample the points for rigid refinement and deformable registration
@@ -749,10 +815,10 @@ def process(
     # radius = 4 for Pongo
 
     movingMesh_vtk = subsample_points_poisson_polydata(
-        movingMesh_vtk, radius=subsample_radius
+        movingFullMesh_vtk, radius=subsample_radius
     )
     fixedMesh_vtk = subsample_points_poisson_polydata(
-        fixedMesh_vtk, radius=subsample_radius
+        fixedFullMesh_vtk, radius=subsample_radius
     )
 
     movingMeshPoints, movingMeshPointNormals = extract_normal_from_tuple(movingMesh_vtk)
@@ -851,6 +917,13 @@ def process(
         alpha_parameter,
         beta_parameter)
     
+    # outputArray = cpd_registration(fixedMeshPoints,
+    #     outputArray,
+    #     CPDIterations,
+    #     CPDTolerance,
+    #     alpha_parameter,
+    #     2)
+
     print('CPD Result ', outputArray.shape)
 
     np.save(WRITE_PATH + casename + "_cpdResultLandmarks.npy", outputArray[:landmark_points.shape[0], :])
@@ -862,6 +935,17 @@ def process(
     nodeName = 'TPS Warped Model'
     warpedModel = applyTPSTransform(inputPoints_vtk, outputPoints_vtk, movingMesh, nodeName)
     write_vtk(warpedModel, WRITE_PATH + casename + "_movingMeshFinalRegistered.vtk")
+
+    maxProjectionFactor = 1/1000.0
+    print('maxProjectionFactor is ', maxProjectionFactor)
+    maxProjection = (fixedFullMesh_vtk.GetLength()) * maxProjectionFactor
+    projectedPoints = projectPointsPolydata(warpedModel, fixedFullMesh_vtk, outputPoints_vtk, maxProjection)
+    projectedPoints = projectedPoints.GetPoints().GetData()
+    projectedPoints = numpy_support.vtk_to_numpy(projectedPoints)
+    print('projectedPoints shape is ', projectedPoints.shape)
+    #projectedPoints = getFiducialPoints(projectedPoints)
+    #write_vtk(projectedPoints, WRITE_PATH + casename + "_cpdResultLandmarksProjected.vtk")
+    np.save(WRITE_PATH + casename + "_cpdResultLandmarksProjected.npy", projectedPoints)
     return
 
     # [STAR] Expectation Based PointSetToPointSetMetricv4 Registration

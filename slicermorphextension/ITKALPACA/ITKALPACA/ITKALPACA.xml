@@ -85,14 +85,14 @@
       <label>Alpha Parameter</label>
       <index>13</index>
       <description><![CDATA[Alpha Parameter]]></description>
-      <default>0.1</default>
+      <default>2.0</default>
     </double>
      <double>
       <name>beta_parameter</name>
       <label>Beta Parameter</label>
       <index>14</index>
       <description><![CDATA[Beta Parameter]]></description>
-      <default>20.0</default>
+      <default>2.0</default>
     </double>
     <label>IO</label>
     <description><![CDATA[Input/output parameters]]></description>
