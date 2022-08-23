@@ -87,7 +87,7 @@
       <description><![CDATA[Alpha Parameter]]></description>
       <default>2.0</default>
     </double>
-     <double>
+    <double>
       <name>beta_parameter</name>
       <label>Beta Parameter</label>
       <index>14</index>
@@ -117,5 +117,12 @@
       <index>15</index>
       <description><![CDATA[Input Landmarks]]></description>
     </string>
+    <integer>
+      <name>cpd_flag</name>
+      <label>CPD or ITK</label>
+      <index>16</index>
+      <description><![CDATA[1 for CPD and 0 for ITK Deformable registration]]></description>
+      <default>1</default>
+    </integer>
   </parameters>
 </executable>

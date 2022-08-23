@@ -629,7 +629,10 @@ def find_knn_cpu(feat0, feat1, knn=1, return_distance=False):
 
 
 def find_correspondences(feats0, feats1, mutual_filter=True):
-    # Remove cases by filtering using some threshold
+    '''
+        Using the FPFH features find noisy corresspondes.
+        These corresspondes will be used inside the RANSAC.
+    '''
     nns01, dists1 = find_knn_cpu(feats0, feats1, knn=1, return_distance=True)
     corres01_idx0 = np.arange(len(nns01))
     corres01_idx1 = nns01
@@ -717,7 +720,8 @@ def process(
     ransac_iterations,
     alpha_parameter,
     beta_parameter,
-    landmark_file
+    landmark_file,
+    cpd_flag
 ):
     landmark_points = read_landmarks(landmark_file)
     print('Landmark points are ', landmark_points.shape)
@@ -902,212 +906,216 @@ def process(
     transform_points_in_vtk(movingMesh, second_transform)
     # add_offset_to_vtk_mesh(movingMesh, vtk_mesh_offsets[1])
     write_vtk(movingMesh, WRITE_PATH + casename + "_movingMeshRigidRegistered.vtk")
-
     print("Completed Rigid Refinement")
     
-    combined_points = np.concatenate([landmark_points, final_mesh_points], axis=0)
-    print('Combined points shape ', combined_points.shape, landmark_points.shape, final_mesh_points.shape)
+    if cpd_flag:
+        combined_points = np.concatenate([landmark_points, final_mesh_points], axis=0)
+        print('Combined points shape ', combined_points.shape, landmark_points.shape, final_mesh_points.shape)
 
-    CPDIterations = deformable_iterations
-    CPDTolerance = 0.001
-    outputArray = cpd_registration(fixedMeshPoints,
-        combined_points,
-        CPDIterations,
-        CPDTolerance,
-        alpha_parameter,
-        beta_parameter)
-    
-    # outputArray = cpd_registration(fixedMeshPoints,
-    #     outputArray,
-    #     CPDIterations,
-    #     CPDTolerance,
-    #     alpha_parameter,
-    #     2)
+        CPDIterations = deformable_iterations
+        CPDTolerance = 0.001
+        outputArray = cpd_registration(fixedMeshPoints,
+            combined_points,
+            CPDIterations,
+            CPDTolerance,
+            alpha_parameter,
+            beta_parameter)
+        print('CPD Result ', outputArray.shape)
 
-    print('CPD Result ', outputArray.shape)
+        np.save(WRITE_PATH + casename + "_cpdResultLandmarks.npy", outputArray[:landmark_points.shape[0], :])
+        np.save(WRITE_PATH + casename + "_cpdResult.npy", outputArray[landmark_points.shape[0]:, :])
 
-    np.save(WRITE_PATH + casename + "_cpdResultLandmarks.npy", outputArray[:landmark_points.shape[0], :])
-    np.save(WRITE_PATH + casename + "_cpdResult.npy", outputArray[landmark_points.shape[0]:, :])
+        outputPoints_vtk = getFiducialPoints(outputArray[:landmark_points.shape[0], :])
+        inputPoints_vtk = getFiducialPoints(landmark_points)
 
-    outputPoints_vtk = getFiducialPoints(outputArray[:landmark_points.shape[0], :])
-    inputPoints_vtk = getFiducialPoints(landmark_points)
+        nodeName = 'TPS Warped Model'
+        warpedModel = applyTPSTransform(inputPoints_vtk, outputPoints_vtk, movingMesh, nodeName)
+        write_vtk(warpedModel, WRITE_PATH + casename + "_movingMeshFinalRegistered_CPD.vtk")
 
-    nodeName = 'TPS Warped Model'
-    warpedModel = applyTPSTransform(inputPoints_vtk, outputPoints_vtk, movingMesh, nodeName)
-    write_vtk(warpedModel, WRITE_PATH + casename + "_movingMeshFinalRegistered.vtk")
-
-    maxProjectionFactor = 1/1000.0
-    print('maxProjectionFactor is ', maxProjectionFactor)
-    maxProjection = (fixedFullMesh_vtk.GetLength()) * maxProjectionFactor
-    projectedPoints = projectPointsPolydata(warpedModel, fixedFullMesh_vtk, outputPoints_vtk, maxProjection)
-    projectedPoints = projectedPoints.GetPoints().GetData()
-    projectedPoints = numpy_support.vtk_to_numpy(projectedPoints)
-    print('projectedPoints shape is ', projectedPoints.shape)
-    #projectedPoints = getFiducialPoints(projectedPoints)
-    #write_vtk(projectedPoints, WRITE_PATH + casename + "_cpdResultLandmarksProjected.vtk")
-    np.save(WRITE_PATH + casename + "_cpdResultLandmarksProjected.npy", projectedPoints)
-    return
-
-    # [STAR] Expectation Based PointSetToPointSetMetricv4 Registration
-
-    imageDiagonal = 100
-    PixelType = itk.D
-    Dimension = 3
-
-    FixedImageType = itk.Image[PixelType, Dimension]
-
-    # Create PointSets for registration
-    movingPS = itk.PointSet[itk.D, Dimension].New()
-    fixedPS = itk.PointSet[itk.D, Dimension].New()
-
-    movingPS.SetPoints(itk.vector_container_from_array(final_mesh_points.flatten()))
-    fixedPS.SetPoints(itk.vector_container_from_array(fixedMeshPoints.flatten()))
-
-    # For getting the Bounding Box
-    ElementIdentifierType = itk.UL
-    CoordType = itk.F
-    Dimension = 3
-
-    VecContType = itk.VectorContainer[
-        ElementIdentifierType, itk.Point[CoordType, Dimension]
-    ]
-    bounding_box = itk.BoundingBox[
-        ElementIdentifierType, Dimension, CoordType, VecContType
-    ].New()
-
-    bounding_box.SetPoints(movingPS.GetPoints())
-    bounding_box.ComputeBoundingBox()
-
-    minBounds = np.array(bounding_box.GetMinimum())
-    maxBounds = np.array(bounding_box.GetMaximum())
-
-    spacing = np.sqrt(bounding_box.GetDiagonalLength2()) / imageDiagonal
-    diff = maxBounds - minBounds
-
-    print("Spacing ", spacing)
-    print("minBounds ", minBounds)
-    print("maxBounds ", maxBounds)
-
-    fixedImageSize = [0] * 3
-    fixedImageSize[0] = math.ceil(1.25 * diff[0] / spacing)
-    fixedImageSize[1] = math.ceil(1.25 * diff[1] / spacing)
-    fixedImageSize[2] = math.ceil(1.25 * diff[2] / spacing)
-
-    fixedImageOrigin = [0] * 3
-    fixedImageOrigin[0] = minBounds[0] - 0.25 * diff[0]
-    fixedImageOrigin[1] = minBounds[1] - 0.25 * diff[1]
-    fixedImageOrigin[2] = minBounds[2] - 0.25 * diff[2]
-
-    fixedImageSpacing = np.ones(3) * spacing
-    fixedImageDirection = np.identity(3)
-
-    fixedImage = FixedImageType.New()
-    fixedImage.SetRegions(fixedImageSize)
-    fixedImage.SetOrigin(fixedImageOrigin)
-    fixedImage.SetDirection(fixedImageDirection)
-    fixedImage.SetSpacing(fixedImageSpacing)
-    fixedImage.Allocate()
-
-    # Create BSpline Transformation object and initialize the parameters
-    SplineOrder = 3
-    TransformType = itk.BSplineTransform[itk.D, Dimension, SplineOrder]
-    InitializerType = itk.BSplineTransformInitializer[TransformType, FixedImageType]
-
-    transform = TransformType.New()
-
-    numberOfGridNodesInOneDimension = bspline_grid
-    transformInitializer = InitializerType.New()
-    transformInitializer.SetTransform(transform)
-    transformInitializer.SetImage(fixedImage)
-    transformInitializer.SetTransformDomainMeshSize(
-        numberOfGridNodesInOneDimension - SplineOrder
-    )
-    transformInitializer.InitializeTransform()
-
-    # Registration Loop
-    numOfIterations = deformable_iterations
-    maxStep = 0.1
-    learningRate = 0.1
-
-    # Good combinations
-    # 10000
-    # sigma: 3, Kneighbourhood 20, bspline: 4 -> 3.72
-    # sigma: 3, Kneighbourhood 20, bspline: 8 -> 3.77
-    # sigma: 3, Kneighbourhood 20, bspline: 6 -> 3.42
-    # sigma: 3, Kneighbourhood 20, bspline: 5 -> 3.70 -> best (by qualitative comparison)
-
-    MetricType = itk.ExpectationBasedPointSetToPointSetMetricv4[type(movingPS)]
-    metric = MetricType.New()
-    metric.SetFixedPointSet(movingPS)
-    metric.SetMovingPointSet(fixedPS)
-    metric.SetPointSetSigma(deform_sigma)
-    metric.SetEvaluationKNeighborhood(deform_neighbourhood)
-    metric.SetMovingTransform(transform)
-    metric.Initialize()
-
-    print("Metric Created")
-
-    optimizer = itk.RegularStepGradientDescentOptimizerv4.D.New()
-    optimizer.SetNumberOfIterations(numOfIterations)
-    optimizer.SetMaximumStepSizeInPhysicalUnits(maxStep)
-    optimizer.SetLearningRate(learningRate)
-    optimizer.SetMinimumConvergenceValue(-100)
-    optimizer.SetConvergenceWindowSize(numOfIterations)
-    optimizer.SetMetric(metric)
-
-    def iteration_update():
-        if optimizer.GetCurrentIteration() % 100 == 0:
-            print(
-                f"It: {optimizer.GetCurrentIteration()}"
-                f" metric value: {optimizer.GetCurrentMetricValue():.6f} "
-            )
+        maxProjectionFactor = 1/1000.0
+        print('maxProjectionFactor is ', maxProjectionFactor)
+        maxProjection = (fixedFullMesh_vtk.GetLength()) * maxProjectionFactor
+        projectedPoints = projectPointsPolydata(warpedModel, fixedFullMesh_vtk, outputPoints_vtk, maxProjection)
+        projectedPoints = projectedPoints.GetPoints().GetData()
+        projectedPoints = numpy_support.vtk_to_numpy(projectedPoints)
+        print('projectedPoints shape is ', projectedPoints.shape)
+        #projectedPoints = getFiducialPoints(projectedPoints)
+        #write_vtk(projectedPoints, WRITE_PATH + casename + "_cpdResultLandmarksProjected.vtk")
+        np.save(WRITE_PATH + casename + "_cpdResultLandmarksProjected.npy", projectedPoints)
         return
+    else:
+        # [STAR] Expectation Based PointSetToPointSetMetricv4 Registration
+        imageDiagonal = 100
+        PixelType = itk.D
+        Dimension = 3
 
-    iteration_command = itk.PyCommand.New()
-    iteration_command.SetCommandCallable(iteration_update)
-    optimizer.AddObserver(itk.IterationEvent(), iteration_command)
+        FixedImageType = itk.Image[PixelType, Dimension]
 
-    optimizer.StartOptimization()
+        # Create PointSets for registration
+        movingPS = itk.PointSet[itk.D, Dimension].New()
+        fixedPS = itk.PointSet[itk.D, Dimension].New()
 
-    # Transform the point set using the final transform
-    final_transform = metric.GetMovingTransform()
+        movingPS.SetPoints(itk.vector_container_from_array(final_mesh_points.flatten()))
+        fixedPS.SetPoints(itk.vector_container_from_array(fixedMeshPoints.flatten()))
 
-    e_metric = itk.EuclideanDistancePointSetToPointSetMetricv4.PSD3.New()
-    e_metric.SetFixedPointSet(fixedPS)
-    e_metric.SetMovingPointSet(movingPS)
-    print("Euclidean Metric Before TSD Deformable Registration ", e_metric.GetValue())
+        # For getting the Bounding Box
+        ElementIdentifierType = itk.UL
+        CoordType = itk.F
+        Dimension = 3
 
-    movingPSNew = itk.PointSet[itk.D, 3].New()
-    numberOfPoints = movingPS.GetNumberOfPoints()
+        VecContType = itk.VectorContainer[
+            ElementIdentifierType, itk.Point[CoordType, Dimension]
+        ]
+        bounding_box = itk.BoundingBox[
+            ElementIdentifierType, Dimension, CoordType, VecContType
+        ].New()
 
-    for n in range(0, numberOfPoints):
-        movingPSNew.SetPoint(n, final_transform.TransformPoint(movingPS.GetPoint(n)))
+        bounding_box.SetPoints(movingPS.GetPoints())
+        bounding_box.ComputeBoundingBox()
 
-    e_metric = itk.EuclideanDistancePointSetToPointSetMetricv4.PSD3.New()
-    e_metric.SetFixedPointSet(fixedPS)
-    e_metric.SetMovingPointSet(movingPSNew)
-    print("Euclidean Metric After TSD Deformable Registration ", e_metric.GetValue())
+        minBounds = np.array(bounding_box.GetMinimum())
+        maxBounds = np.array(bounding_box.GetMaximum())
 
-    # Write the Displacement Field
-    write_displacement_field = False
-    if write_displacement_field:
-        convertFilter = itk.TransformToDisplacementFieldFilter.IVF33D.New()
-        convertFilter.SetTransform(final_transform)
-        convertFilter.UseReferenceImageOn()
-        convertFilter.SetReferenceImage(fixedImage)
-        convertFilter.Update()
-        field = convertFilter.GetOutput()
-        field = np.array(field)
-        np.save(WRITE_PATH + "displacement_field.npy", field)
+        spacing = np.sqrt(bounding_box.GetDiagonalLength2()) / imageDiagonal
+        diff = maxBounds - minBounds
 
-    # Write the final registered mesh
-    movingMeshPath = WRITE_PATH + casename + "_movingMeshRigidRegistered.vtk"
-    print('movingMeshPath is ', movingMeshPath)
-    movingMesh = itk.meshread(movingMeshPath, itk.F)
-    movingMesh = itk.transform_mesh_filter(movingMesh, transform=final_transform)
-    #add_offset_to_itk_mesh(movingMesh, itk_mesh_offset)
-    write_itk_mesh(movingMesh, WRITE_PATH + casename + "_movingMeshFinalRegistered.vtk")
-    return
+        print("Spacing ", spacing)
+        print("minBounds ", minBounds)
+        print("maxBounds ", maxBounds)
+
+        fixedImageSize = [0] * 3
+        fixedImageSize[0] = math.ceil(1.25 * diff[0] / spacing)
+        fixedImageSize[1] = math.ceil(1.25 * diff[1] / spacing)
+        fixedImageSize[2] = math.ceil(1.25 * diff[2] / spacing)
+
+        fixedImageOrigin = [0] * 3
+        fixedImageOrigin[0] = minBounds[0] - 0.25 * diff[0]
+        fixedImageOrigin[1] = minBounds[1] - 0.25 * diff[1]
+        fixedImageOrigin[2] = minBounds[2] - 0.25 * diff[2]
+
+        fixedImageSpacing = np.ones(3) * spacing
+        fixedImageDirection = np.identity(3)
+
+        fixedImage = FixedImageType.New()
+        fixedImage.SetRegions(fixedImageSize)
+        fixedImage.SetOrigin(fixedImageOrigin)
+        fixedImage.SetDirection(fixedImageDirection)
+        fixedImage.SetSpacing(fixedImageSpacing)
+        fixedImage.Allocate()
+
+        # Create BSpline Transformation object and initialize the parameters
+        SplineOrder = 3
+        TransformType = itk.BSplineTransform[itk.D, Dimension, SplineOrder]
+        InitializerType = itk.BSplineTransformInitializer[TransformType, FixedImageType]
+
+        transform = TransformType.New()
+
+        numberOfGridNodesInOneDimension = bspline_grid
+        transformInitializer = InitializerType.New()
+        transformInitializer.SetTransform(transform)
+        transformInitializer.SetImage(fixedImage)
+        transformInitializer.SetTransformDomainMeshSize(
+            numberOfGridNodesInOneDimension - SplineOrder
+        )
+        transformInitializer.InitializeTransform()
+
+        # Registration Loop
+        numOfIterations = deformable_iterations
+        maxStep = 0.1
+        learningRate = 0.1
+
+        # Good combinations
+        # 10000
+        # sigma: 3, Kneighbourhood 20, bspline: 4 -> 3.72
+        # sigma: 3, Kneighbourhood 20, bspline: 8 -> 3.77
+        # sigma: 3, Kneighbourhood 20, bspline: 6 -> 3.42
+        # sigma: 3, Kneighbourhood 20, bspline: 5 -> 3.70 -> best (by qualitative comparison)
+
+        MetricType = itk.ExpectationBasedPointSetToPointSetMetricv4[type(movingPS)]
+        metric = MetricType.New()
+        metric.SetFixedPointSet(movingPS)
+        metric.SetMovingPointSet(fixedPS)
+        metric.SetPointSetSigma(deform_sigma)
+        metric.SetEvaluationKNeighborhood(deform_neighbourhood)
+        metric.SetMovingTransform(transform)
+        metric.Initialize()
+
+        print("Metric Created")
+
+        optimizer = itk.RegularStepGradientDescentOptimizerv4.D.New()
+        optimizer.SetNumberOfIterations(numOfIterations)
+        optimizer.SetMaximumStepSizeInPhysicalUnits(maxStep)
+        optimizer.SetLearningRate(learningRate)
+        optimizer.SetMinimumConvergenceValue(-100)
+        optimizer.SetConvergenceWindowSize(numOfIterations)
+        optimizer.SetMetric(metric)
+
+        def iteration_update():
+            if optimizer.GetCurrentIteration() % 100 == 0:
+                print(
+                    f"It: {optimizer.GetCurrentIteration()}"
+                    f" metric value: {optimizer.GetCurrentMetricValue():.6f} "
+                )
+            return
+
+        iteration_command = itk.PyCommand.New()
+        iteration_command.SetCommandCallable(iteration_update)
+        optimizer.AddObserver(itk.IterationEvent(), iteration_command)
+
+        optimizer.StartOptimization()
+
+        # Transform the point set using the final transform
+        final_transform = metric.GetMovingTransform()
+
+        e_metric = itk.EuclideanDistancePointSetToPointSetMetricv4.PSD3.New()
+        e_metric.SetFixedPointSet(fixedPS)
+        e_metric.SetMovingPointSet(movingPS)
+        print("Euclidean Metric Before TSD Deformable Registration ", e_metric.GetValue())
+
+        movingPSNew = itk.PointSet[itk.D, 3].New()
+        numberOfPoints = movingPS.GetNumberOfPoints()
+
+        for n in range(0, numberOfPoints):
+            movingPSNew.SetPoint(n, final_transform.TransformPoint(movingPS.GetPoint(n)))
+
+        e_metric = itk.EuclideanDistancePointSetToPointSetMetricv4.PSD3.New()
+        e_metric.SetFixedPointSet(fixedPS)
+        e_metric.SetMovingPointSet(movingPSNew)
+        print("Euclidean Metric After TSD Deformable Registration ", e_metric.GetValue())
+
+        # Write the Displacement Field
+        write_displacement_field = False
+        if write_displacement_field:
+            convertFilter = itk.TransformToDisplacementFieldFilter.IVF33D.New()
+            convertFilter.SetTransform(final_transform)
+            convertFilter.UseReferenceImageOn()
+            convertFilter.SetReferenceImage(fixedImage)
+            convertFilter.Update()
+            field = convertFilter.GetOutput()
+            field = np.array(field)
+            np.save(WRITE_PATH + "displacement_field.npy", field)
+
+        # Write the final registered mesh
+        movingMeshPath = WRITE_PATH + casename + "_movingMeshRigidRegistered.vtk"
+        print('movingMeshPath is ', movingMeshPath)
+        movingMesh = read_vtk(movingMeshPath)
+        #movingMesh = itk.meshread(movingMeshPath, itk.F)
+        #movingMesh = itk.transform_mesh_filter(movingMesh, transform=final_transform)
+        #add_offset_to_itk_mesh(movingMesh, itk_mesh_offset)
+        #write_itk_mesh(movingMesh, WRITE_PATH + casename + "_movingMeshFinalRegisteredITK.vtk")
+
+        landmark_points_transformed = []
+        for i in range(len(landmark_points)):
+            landmark_points_transformed.append( final_transform.TransformPoint(itk.Point.F3([float(landmark_points[i][0]), float(landmark_points[i][1]), float(landmark_points[i][2])])))
+        landmark_points_transformed = np.array(landmark_points_transformed)
+
+        outputPoints_vtk = getFiducialPoints(landmark_points_transformed)
+        inputPoints_vtk = getFiducialPoints(landmark_points)
+
+        nodeName = 'TPS Warped Model'
+        warpedModel = applyTPSTransform(inputPoints_vtk, outputPoints_vtk, movingMesh, nodeName)
+        write_vtk(warpedModel, WRITE_PATH + casename + "_movingMeshFinalRegisteredITK_TPS.vtk")
+        return
 
 
 # # # refinement transform

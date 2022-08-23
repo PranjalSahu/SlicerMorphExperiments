@@ -20,7 +20,8 @@ def main(
     ransac_iterations,
     alpha_parameter,
     beta_parameter,
-    landmark_file
+    landmark_file,
+    cpd_flag
 ):
     alpaca.process(
         target,
@@ -37,14 +38,15 @@ def main(
         ransac_iterations,
         alpha_parameter,
         beta_parameter,
-        landmark_file
+        landmark_file,
+        cpd_flag
     )
 
 
 if __name__ == "__main__":
     if len(sys.argv) < 4:
         print(
-            "Usage: ITKALPACA <target> <source> <subsample_radius> <number_of_ransac_points> <inlier_value> <fpfh_radius> <fpfh_neighbors> <deform_sigma> <deform_neighbourhood> <bspline_grid> <deformable_iterations> <ransac_iterations> <alpha_parameter> <beta_parameter>"
+            "Usage: ITKALPACA <target> <source> <subsample_radius> <number_of_ransac_points> <inlier_value> <fpfh_radius> <fpfh_neighbors> <deform_sigma> <deform_neighbourhood> <bspline_grid> <deformable_iterations> <ransac_iterations> <alpha_parameter> <beta_parameter> <landmark_file> <cpd_flag>"
         )
         sys.exit(1)
     print("Parameters are ")
@@ -63,6 +65,7 @@ if __name__ == "__main__":
     print("alpha_parameter : ", float(sys.argv[13]))
     print("beta_parameter : ", float(sys.argv[14]))
     print("landmark_file : ", sys.argv[15])
+    print("cpd_flag : ", sys.argv[16])
 
     slicer.util.pip_install(f'cpdalp')
     import cpdalp
@@ -83,5 +86,6 @@ if __name__ == "__main__":
         ransac_iterations=int(sys.argv[12]),
         alpha_parameter=float(sys.argv[13]),
         beta_parameter=float(sys.argv[14]),
-        landmark_file=sys.argv[15]
+        landmark_file=sys.argv[15],
+        cpd_flag=sys.argv[16]
     )
