@@ -65,7 +65,7 @@ if __name__ == "__main__":
     print("alpha_parameter : ", float(sys.argv[13]))
     print("beta_parameter : ", float(sys.argv[14]))
     print("landmark_file : ", sys.argv[15])
-    print("cpd_flag : ", sys.argv[16])
+    print("cpd_flag : ", int(sys.argv[16]))
 
     slicer.util.pip_install(f'cpdalp')
     import cpdalp
@@ -87,5 +87,5 @@ if __name__ == "__main__":
         alpha_parameter=float(sys.argv[13]),
         beta_parameter=float(sys.argv[14]),
         landmark_file=sys.argv[15],
-        cpd_flag=sys.argv[16]
+        cpd_flag=int(sys.argv[16])
     )

@@ -9,9 +9,11 @@ from re import A
 import sys
 import slicer
 
+
 sys.path.insert(
     0, "/data/SlicerMorph/ITKALPACA-python-dependencies/lib/python3.9/site-packages/"
 )
+
 WRITE_PATH = "/data/Apedata/Slicer-cli-outputs/"
 
 import numpy as np
@@ -27,7 +29,8 @@ from cpdalp import DeformableRegistration
 
 # Install Dependencies using
 # /home/pranjal.sahu/Downloads/Slicer-5.0.3-linux-amd64/bin/PythonSlicer -m pip install --prefix=/data/SlicerMorph/ITKALPACA-python-dependencies itk==5.3rc4
-# python -m pip install -U --no-deps --prefix=/data/SlicerMorph/ITKALPACA-python-dependencies /data/SlicerMorph/LinuxWheel39_fpfh_5.3rc4_again/itk_fpfh-0.1.0-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl --no-cache-dir
+# python -m pip install -U --no-deps --prefix=/data/SlicerMorph/ITKALPACA-python-dependencies /data/SlicerMorph/LinuxWheels39/itk_fpfh-0.1.0-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl --no-cache-dir
+# python -m pip install -U --no-deps --prefix=/data/SlicerMorph/ITKALPACA-python-dependencies /data/SlicerMorph/LinuxWheels39/itk_ransac-0.1.0-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl --no-cache-dir
 
 def getFiducialPoints(fiducialNumpyPoints):
     points = vtk.vtkPoints()
@@ -382,6 +385,93 @@ def final_iteration(fixedPoints, movingPoints, transform_type):
         current_transform,
     )
 
+# RANSAC using package
+def ransac_using_package(
+    movingMeshPoints,
+    fixedMeshPoints,
+    movingMeshFeaturePoints,
+    fixedMeshFeaturePoints,
+    number_of_iterations,
+    number_of_ransac_points,
+    inlier_value):
+
+    def GenerateData(data, agreeData):
+        """
+            In current implmentation the agreedata contains two corressponding 
+            points from moving and fixed mesh. However, after the subsampling step the 
+            number of points need not be equal in those meshes. So we randomly sample 
+            the points from larger mesh.
+        """
+        data.reserve(movingMeshFeaturePoints.shape[0])
+        for i in range(movingMeshFeaturePoints.shape[0]):
+            point1 = movingMeshFeaturePoints[i]
+            point2 = fixedMeshFeaturePoints[i]
+            input_data = [point1[0], point1[1], point1[2], point2[0], point2[1], point2[2]]
+            input_data = [float(x) for x in input_data]
+            data.push_back(input_data)
+    
+        count_min = int(np.min([movingMeshPoints.shape[0], fixedMeshPoints.shape[0]]))
+
+        mesh1_points  = copy.deepcopy(movingMeshPoints)
+        mesh2_points  = copy.deepcopy(fixedMeshPoints)
+
+        agreeData.reserve(count_min)
+        for i in range(count_min):
+            point1 = mesh1_points[i]
+            point2 = mesh2_points[i]
+            input_data = [point1[0], point1[1], point1[2], point2[0], point2[1], point2[2]]
+            input_data = [float(x) for x in input_data]
+            agreeData.push_back(input_data)
+        return
+
+    data = itk.vector[itk.Point[itk.D, 6]]()
+    agreeData = itk.vector[itk.Point[itk.D, 6]]()
+    GenerateData(data, agreeData)
+
+    transformParameters = itk.vector.D()
+    bestTransformParameters = itk.vector.D()
+
+    maximumDistance = inlier_value
+    RegistrationEstimatorType = itk.Ransac.LandmarkRegistrationEstimator[6]
+    registrationEstimator = RegistrationEstimatorType.New()
+    registrationEstimator.SetMinimalForEstimate(number_of_ransac_points)
+    registrationEstimator.SetAgreeData(agreeData)
+    registrationEstimator.SetDelta(maximumDistance)
+    registrationEstimator.LeastSquaresEstimate(data, transformParameters)
+
+    bestPercentage = 0
+    bestParameters = None
+
+    desiredProbabilityForNoOutliers = 0.99
+    RANSACType = itk.RANSAC[itk.Point[itk.D, 6], itk.D]
+    ransacEstimator = RANSACType.New()
+    ransacEstimator.SetData(data)
+    ransacEstimator.SetAgreeData(agreeData)
+    ransacEstimator.SetMaxIteration(number_of_iterations)
+    ransacEstimator.SetNumberOfThreads(8)
+    ransacEstimator.SetParametersEstimator(registrationEstimator)
+    
+    for i in range(1):    
+        percentageOfDataUsed = ransacEstimator.Compute( transformParameters, desiredProbabilityForNoOutliers )
+        print(i, ' Percentage of data used is ', percentageOfDataUsed)
+        if percentageOfDataUsed > bestPercentage:
+            bestPercentage = percentageOfDataUsed
+            bestParameters = transformParameters
+
+    print("Percentage of points used ", bestPercentage)
+    transformParameters = bestParameters
+    transform = itk.Similarity3DTransform.D.New()
+    p = transform.GetParameters()
+    f = transform.GetFixedParameters()
+    for i in range(7):
+        p.SetElement(i, transformParameters[i])
+    counter = 0
+    for i in range(7, 10):
+        f.SetElement(counter, transformParameters[i])
+        counter = counter + 1
+    transform.SetParameters(p)
+    transform.SetFixedParameters(f)
+    return itk.dict_from_transform(transform), bestPercentage, bestPercentage
 
 # RANSAC with VTK Landmark Transform
 def ransac_icp_parallel_vtk(
@@ -440,7 +530,7 @@ def ransac_icp_parallel_vtk(
                         m[i, j] = matrix.GetElement(i, j)
                 return np.array(m)
 
-            m = landmarkTransform.GetMatrix()
+            m = vtk_transform.GetMatrix()
             tp = vtkmatrix_to_numpy(m)
 
             itks = itk.Similarity3DTransform.New()
@@ -486,7 +576,6 @@ def ransac_icp_parallel_vtk(
 
         """ For converting VTK Transform to ITK Transform """
         current_transform = itk_transform_from_vtk(landmarkTransform)
-
         """ For transforming the pointset using the obtained transform """
         temp_pointset = itk.Mesh[itk.D, 3].New()
         temp_pointset.SetPoints(
@@ -512,7 +601,6 @@ def ransac_icp_parallel_vtk(
             return (current_value, inlier_array)
 
     # Spawn multiple jobs to utilize all cores
-
     # Test code for not using parallel threads
     results = []
     for i in range(number_of_iterations):
@@ -857,26 +945,27 @@ def process(
     print(f"FPFH generates {num_corrs} putative correspondences.")
 
     print(fixed_corr.shape, moving_corr.shape)
-    np.save(WRITE_PATH + casename + "_moving_corr.npy", moving_corr)
-    np.save(WRITE_PATH + casename + "_fixed_corr.npy", fixed_corr)
+    
+    write_vtk(numpy_to_vtk_polydata(moving_corr.T), WRITE_PATH + casename + "_moving_corr.vtk")
+    write_vtk(numpy_to_vtk_polydata(fixed_corr.T), WRITE_PATH + casename + "_fixed_corr.vtk")
+    write_vtk(numpy_to_vtk_polydata(movingMeshPoints.T), WRITE_PATH + casename + "_movingMeshPointsBefore.vtk")
+    write_vtk(numpy_to_vtk_polydata(fixedMeshPoints.T), WRITE_PATH + casename + "_fixedMeshPoints.vtk")
 
     # Perform Initial alignment using Ransac parallel iterations
-    transform_matrix, index, value = ransac_icp_parallel_vtk(
-        movingMeshPoints=moving_corr.T,
-        fixedMeshPoints=fixed_corr.T,
+    #transform_matrix, index, value = ransac_icp_parallel_vtk(
+    transform_matrix, index, value = ransac_using_package(
+        movingMeshPoints=movingMeshPoints.T,
+        fixedMeshPoints=fixedMeshPoints.T,
+        movingMeshFeaturePoints=moving_corr.T,
+        fixedMeshFeaturePoints=fixed_corr.T,
         number_of_iterations=ransac_iterations,
         number_of_ransac_points=number_of_ransac_points,
-        transform_type=3,
         inlier_value=inlier_value,
     )
 
-    print("Best Combination ", index, value)
+    print('Value is ', value)
     transform_matrix = itk.transform_from_dict(transform_matrix)
-
-    # movingMesh_RANSAC = itk.transform_mesh_filter(
-    #    movingMesh, transform=transform_matrix
-    # )
-
+    
     transform_points_in_vtk(movingMesh, transform_matrix)
     write_vtk(movingMesh, WRITE_PATH + casename + "_movingMeshRANSAC.vtk")
 
@@ -892,13 +981,15 @@ def process(
     print("Starting Rigid Refinement")
     print("Before Distance ", get_euclidean_distance(fixedMeshPoints, movingMeshPoints))
 
+    print("Shapes are  ", movingMeshPoints.shape, fixedMeshPoints.shape)
+
     transform_type = 0
     final_mesh_points, second_transform = final_iteration(
         fixedMeshPoints, movingMeshPoints, transform_type
     )
-    np.save(WRITE_PATH + casename+"_fixedMeshPoints.npy", fixedMeshPoints)
-    np.save(WRITE_PATH + casename+"_movingMeshPoints.npy", movingMeshPoints)
-    np.save(WRITE_PATH + casename+"_final_mesh_points.npy", final_mesh_points)
+    
+    write_vtk(numpy_to_vtk_polydata(movingMeshPoints), WRITE_PATH + casename + "_movingMeshPoints.vtk")
+    write_vtk(numpy_to_vtk_polydata(final_mesh_points), WRITE_PATH + casename + "_final_mesh_points.vtk")
 
     print("After Distance ", get_euclidean_distance(fixedMeshPoints, final_mesh_points))
 
@@ -906,9 +997,10 @@ def process(
     transform_points_in_vtk(movingMesh, second_transform)
     # add_offset_to_vtk_mesh(movingMesh, vtk_mesh_offsets[1])
     write_vtk(movingMesh, WRITE_PATH + casename + "_movingMeshRigidRegistered.vtk")
-    print("Completed Rigid Refinement")
     
-    if cpd_flag:
+    print("Completed Rigid Refinement")
+    print('cpd_flag is ', cpd_flag)
+    if int(cpd_flag) == 1:
         combined_points = np.concatenate([landmark_points, final_mesh_points], axis=0)
         print('Combined points shape ', combined_points.shape, landmark_points.shape, final_mesh_points.shape)
 
