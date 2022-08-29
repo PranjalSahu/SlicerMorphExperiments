@@ -14,9 +14,9 @@ The overall goal is to ultimately help with:
 
 ### Install Dependencies using
 ```
-# /home/pranjal.sahu/Downloads/Slicer-5.0.3-linux-amd64/bin/PythonSlicer -m pip install --prefix=/data/SlicerMorph/ITKALPACA-python-dependencies itk==5.3rc4
-# python -m pip install -U --no-deps --prefix=/data/SlicerMorph/ITKALPACA-python-dependencies /data/SlicerMorph/LinuxWheel39_fpfh_5.3rc4_again/itk_fpfh-0.1.0-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl --no-cache-dir
-
+export WHEELS_PATH=/data/SlicerMorph/AllPythonWheels/
+export PREFIX_PATH=/data/SlicerMorph/ITKALPACA-python-dependencies
+~/Slicer-5.0.3-linux-amd64/bin/PythonSlicer -m pip install --prefix=$PREFIX_PATH --no-index --find-links=$WHEELS_PATH --no-deps --force-reinstall --no-cache-dir -r requirements.txt
 ```
 
 ### Command to run the extension with Slicer
