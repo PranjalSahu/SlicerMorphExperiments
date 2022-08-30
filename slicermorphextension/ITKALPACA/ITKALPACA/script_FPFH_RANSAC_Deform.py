@@ -28,9 +28,9 @@ from scipy.spatial import cKDTree
 from cpdalp import DeformableRegistration
 
 # Install Dependencies using
-# /home/pranjal.sahu/Downloads/Slicer-5.0.3-linux-amd64/bin/PythonSlicer -m pip install --prefix=/data/SlicerMorph/ITKALPACA-python-dependencies itk==5.3rc4
-# python -m pip install -U --no-deps --prefix=/data/SlicerMorph/ITKALPACA-python-dependencies /data/SlicerMorph/LinuxWheels39/itk_fpfh-0.1.0-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl --no-cache-dir
-# python -m pip install -U --no-deps --prefix=/data/SlicerMorph/ITKALPACA-python-dependencies /data/SlicerMorph/LinuxWheels39/itk_ransac-0.1.0-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl --no-cache-dir
+# export WHEELS_PATH=/data/SlicerMorph/AllPythonWheels/
+# export PREFIX_PATH=/data/SlicerMorph/ITKALPACA-python-dependencies
+# ~/Slicer-5.0.3-linux-amd64/bin/PythonSlicer -m pip install --prefix=$PREFIX_PATH --no-index --find-links=$WHEELS_PATH --no-deps --force-reinstall --no-cache-dir -r requirements.txt
 
 def getFiducialPoints(fiducialNumpyPoints):
     points = vtk.vtkPoints()
@@ -842,7 +842,7 @@ def process(
 
         vtk_meshes.append(vtk_mesh_out_clean)
 
-    # Scale mesh before doing moment based initialization
+    # Scale the mesh and the landmark points
     box_filter = vtk.vtkBoundingBox()
     box_filter.SetBounds(vtk_meshes[0].GetBounds())
     fixedlength = box_filter.GetDiagonalLength()
@@ -862,50 +862,47 @@ def process(
     landmark_points = landmark_points * scale_factor
     set_numpy_points_in_vtk(vtk_meshes[1], points_as_numpy)
 
-    # Zero center the meshes
+    # Get the offsets to align the minimum of moving and fixed mesh
     vtk_mesh_offsets = []
     for i, mesh in enumerate(vtk_meshes):
-        # Make all the points to positive coordinates
         mesh_points = get_numpy_points_from_vtk(mesh)
         vtk_mesh_offset = np.min(mesh_points, axis=0)
-        mesh_points = mesh_points - vtk_mesh_offset
-        set_numpy_points_in_vtk(mesh, mesh_points)
         vtk_mesh_offsets.append(vtk_mesh_offset)
 
-    landmark_points = landmark_points - vtk_mesh_offsets[1]
-    movingMesh = vtk_meshes[0]
-    fixedMesh = vtk_meshes[1]
+    # Only move the moving mesh
+    mesh_points = get_numpy_points_from_vtk(vtk_meshes[1])
+    offset_amount = (vtk_mesh_offsets[1] - vtk_mesh_offsets[0])
+    mesh_points = mesh_points - offset_amount
+    set_numpy_points_in_vtk(vtk_meshes[1], mesh_points)
+    # Move the moving landmark_points by same amount
+    landmark_points = landmark_points - offset_amount
+
+    fixedMesh = vtk_meshes[0]
+    movingMesh = vtk_meshes[1]
 
     # Write back out to a filetype supported by ITK
     vtk_paths = [path.strip(".vtp") + ".vtk" for path in paths]
     for idx, mesh in enumerate(vtk_meshes):
         casename = vtk_paths[idx].split("/")[-1].split(".")[0].split("_")[0]
-        if idx == 0:
+        if idx == 1:
             write_path = WRITE_PATH + casename + "_movingMesh.vtk"
         else:
             write_path = WRITE_PATH + casename + "_fixedMesh.vtk"
         print("Writing mesh ", write_path)
         write_vtk(mesh, write_path)
 
-    # Write the cleaned Moment Initialized meshes
+    # Write the cleaned Initialized meshes
     movingMeshPath = WRITE_PATH + casename + "_movingMesh.vtk"
     fixedMeshPath = WRITE_PATH + casename + "_fixedMesh.vtk"
 
     # For performing RANSAC in parallel
-    transform_type = 0
-
     movingMesh_vtk = read_vtk(movingMeshPath)
     fixedMesh_vtk = read_vtk(fixedMeshPath)
 
     movingFullMesh_vtk = getnormals(movingMesh_vtk)
     fixedFullMesh_vtk = getnormals(fixedMesh_vtk)
 
-    # For performing RANSAC in parallel
     # Sub-Sample the points for rigid refinement and deformable registration
-    # radius = 5.5 for gorilla
-    # radius = 4.5 for Pan
-    # radius = 4 for Pongo
-
     movingMesh_vtk = subsample_points_poisson_polydata(
         movingFullMesh_vtk, radius=subsample_radius
     )
@@ -952,8 +949,7 @@ def process(
     write_vtk(numpy_to_vtk_polydata(fixedMeshPoints.T), WRITE_PATH + casename + "_fixedMeshPoints.vtk")
 
     # Perform Initial alignment using Ransac parallel iterations
-    #transform_matrix, index, value = ransac_icp_parallel_vtk(
-    transform_matrix, index, value = ransac_using_package(
+    transform_matrix, _, value = ransac_using_package(
         movingMeshPoints=movingMeshPoints.T,
         fixedMeshPoints=fixedMeshPoints.T,
         movingMeshFeaturePoints=moving_corr.T,
@@ -963,7 +959,6 @@ def process(
         inlier_value=inlier_value,
     )
 
-    print('Value is ', value)
     transform_matrix = itk.transform_from_dict(transform_matrix)
     
     transform_points_in_vtk(movingMesh, transform_matrix)
@@ -995,7 +990,6 @@ def process(
 
     landmark_points = transform_numpy_points(landmark_points, second_transform)
     transform_points_in_vtk(movingMesh, second_transform)
-    # add_offset_to_vtk_mesh(movingMesh, vtk_mesh_offsets[1])
     write_vtk(movingMesh, WRITE_PATH + casename + "_movingMeshRigidRegistered.vtk")
     
     print("Completed Rigid Refinement")
@@ -1003,7 +997,6 @@ def process(
     if int(cpd_flag) == 1:
         combined_points = np.concatenate([landmark_points, final_mesh_points], axis=0)
         print('Combined points shape ', combined_points.shape, landmark_points.shape, final_mesh_points.shape)
-
         CPDIterations = deformable_iterations
         CPDTolerance = 0.001
         outputArray = cpd_registration(fixedMeshPoints,
@@ -1024,9 +1017,9 @@ def process(
         warpedModel = applyTPSTransform(inputPoints_vtk, outputPoints_vtk, movingMesh, nodeName)
         write_vtk(warpedModel, WRITE_PATH + casename + "_movingMeshFinalRegistered_CPD.vtk")
 
-        maxProjectionFactor = 1/1000.0
-        print('maxProjectionFactor is ', maxProjectionFactor)
+        maxProjectionFactor = 1/100.0
         maxProjection = (fixedFullMesh_vtk.GetLength()) * maxProjectionFactor
+        print("Max Projection is ", maxProjection)
         projectedPoints = projectPointsPolydata(warpedModel, fixedFullMesh_vtk, outputPoints_vtk, maxProjection)
         projectedPoints = projectedPoints.GetPoints().GetData()
         projectedPoints = numpy_support.vtk_to_numpy(projectedPoints)
@@ -1191,11 +1184,7 @@ def process(
         movingMeshPath = WRITE_PATH + casename + "_movingMeshRigidRegistered.vtk"
         print('movingMeshPath is ', movingMeshPath)
         movingMesh = read_vtk(movingMeshPath)
-        #movingMesh = itk.meshread(movingMeshPath, itk.F)
-        #movingMesh = itk.transform_mesh_filter(movingMesh, transform=final_transform)
-        #add_offset_to_itk_mesh(movingMesh, itk_mesh_offset)
-        #write_itk_mesh(movingMesh, WRITE_PATH + casename + "_movingMeshFinalRegisteredITK.vtk")
-
+        
         landmark_points_transformed = []
         for i in range(len(landmark_points)):
             landmark_points_transformed.append( final_transform.TransformPoint(itk.Point.F3([float(landmark_points[i][0]), float(landmark_points[i][1]), float(landmark_points[i][2])])))
