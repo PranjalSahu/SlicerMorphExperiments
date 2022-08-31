@@ -9,7 +9,6 @@ from re import A
 import sys
 import slicer
 
-
 sys.path.insert(
     0, "/data/SlicerMorph/ITKALPACA-python-dependencies/lib/python3.9/site-packages/"
 )
@@ -125,6 +124,7 @@ def cpd_registration(
     alpha_parameter,
     beta_parameter,
 ):
+    print('-----------------------------------------------------------')
     print("Before Deformable Distance ", get_euclidean_distance(targetArray, sourceArray))
 
     cloudSize = np.max(targetArray, 0) - np.min(targetArray)
@@ -147,6 +147,7 @@ def cpd_registration(
     targetArray = targetArray*cloudSize/25
 
     print("After Deformable Distance ", get_euclidean_distance(targetArray, deformed_array))
+    print('-----------------------------------------------------------')
     return deformed_array
 
 
@@ -223,16 +224,30 @@ def write_vtk(vtk_polydata, filename):
     return
 
 
-def read_vtk(filename):
+def readvtk(filename):
     a = vtk.vtkPolyDataReader()
     a.SetFileName(filename)
     a.Update()
     m1 = a.GetOutput()
     return m1
 
-
 def readply(filename):
     a = vtk.vtkPLYReader()
+    a.SetFileName(filename)
+    a.Update()
+    m1 = a.GetOutput()
+    return m1
+
+def readvtp(filename):
+    a = vtk.vtkXMLPolyDataReader()
+    a.SetFileName(filename)
+    a.Update()
+    m1 = a.GetOutput()
+    return m1
+
+
+def readvtkdata(filename):
+    a = vtk.vtkDataReader()
     a.SetFileName(filename)
     a.Update()
     m1 = a.GetOutput()
@@ -332,10 +347,8 @@ def final_iteration(fixedPoints, movingPoints, transform_type):
     Returns:
         (tranformed movingPoints, tranform)
     """
-
     mesh_fixed = itk.Mesh[itk.D, 3].New()
     mesh_moving = itk.Mesh[itk.D, 3].New()
-
     mesh_fixed.SetPoints(itk.vector_container_from_array(fixedPoints.flatten()))
     mesh_moving.SetPoints(itk.vector_container_from_array(movingPoints.flatten()))
 
@@ -350,7 +363,6 @@ def final_iteration(fixedPoints, movingPoints, transform_type):
     transform.SetIdentity()
 
     MetricType = itk.EuclideanDistancePointSetToPointSetMetricv4.PSD3
-    # MetricType = itk.PointToPlanePointSetToPointSetMetricv4.PSD3
     metric = MetricType.New()
     metric.SetMovingPointSet(mesh_moving)
     metric.SetFixedPointSet(mesh_fixed)
@@ -370,8 +382,7 @@ def final_iteration(fixedPoints, movingPoints, transform_type):
             f"It: {optimizer.GetCurrentIteration()}"
             f" metric value: {optimizer.GetCurrentMetricValue():.6f} "
         )
-
-    # optimizer.AddObserver(itk.IterationEvent(), print_iteration)
+    #optimizer.AddObserver(itk.IterationEvent(), print_iteration)
     optimizer.StartOptimization()
 
     # Get the correct transform and perform the final alignment
@@ -448,7 +459,7 @@ def ransac_using_package(
     ransacEstimator.SetData(data)
     ransacEstimator.SetAgreeData(agreeData)
     ransacEstimator.SetMaxIteration(number_of_iterations)
-    ransacEstimator.SetNumberOfThreads(8)
+    ransacEstimator.SetNumberOfThreads(4)
     ransacEstimator.SetParametersEstimator(registrationEstimator)
     
     for i in range(1):    
@@ -813,20 +824,23 @@ def process(
 ):
     landmark_points = read_landmarks(landmark_file)
     print('Landmark points are ', landmark_points.shape)
-
-    casename = source.split("/")[-1].split(".")[0]
+    
     paths = [target, source]
 
     # Write the meshes in vtk format so that they can be read in ITK
     vtk_meshes = list()
-
+    filetype = None
     for path in paths:
         print("Reading file ", path)
-        reader = vtk.vtkXMLPolyDataReader()
-        reader.SetFileName(path)
-        reader.Update()
-
-        vtk_mesh = reader.GetOutput()
+        if path.endswith('.vtp'):
+            vtk_mesh = readvtp(path)
+            filetype = '.vtp'
+        elif path.endswith('.ply'):
+            vtk_mesh = readply(path)
+            filetype = '.ply'
+        else:
+            vtk_mesh = readvtk(path)
+            filetype = '.vtk'
 
         # Get largest connected component and clean the mesh to remove un-used points
         connectivityFilter = vtk.vtkPolyDataConnectivityFilter()
@@ -881,9 +895,11 @@ def process(
     movingMesh = vtk_meshes[1]
 
     # Write back out to a filetype supported by ITK
-    vtk_paths = [path.strip(".vtp") + ".vtk" for path in paths]
+    vtk_paths = [path.strip(filetype) + ".vtk" for path in paths]
+    casenames = []
     for idx, mesh in enumerate(vtk_meshes):
         casename = vtk_paths[idx].split("/")[-1].split(".")[0].split("_")[0]
+        casenames.append(casename)
         if idx == 1:
             write_path = WRITE_PATH + casename + "_movingMesh.vtk"
         else:
@@ -892,12 +908,12 @@ def process(
         write_vtk(mesh, write_path)
 
     # Write the cleaned Initialized meshes
-    movingMeshPath = WRITE_PATH + casename + "_movingMesh.vtk"
-    fixedMeshPath = WRITE_PATH + casename + "_fixedMesh.vtk"
+    movingMeshPath = WRITE_PATH + casenames[1] + "_movingMesh.vtk"
+    fixedMeshPath = WRITE_PATH + casenames[0] + "_fixedMesh.vtk"
 
     # For performing RANSAC in parallel
-    movingMesh_vtk = read_vtk(movingMeshPath)
-    fixedMesh_vtk = read_vtk(fixedMeshPath)
+    movingMesh_vtk = readvtk(movingMeshPath)
+    fixedMesh_vtk = readvtk(fixedMeshPath)
 
     movingFullMesh_vtk = getnormals(movingMesh_vtk)
     fixedFullMesh_vtk = getnormals(fixedMesh_vtk)
@@ -913,10 +929,10 @@ def process(
     movingMeshPoints, movingMeshPointNormals = extract_normal_from_tuple(movingMesh_vtk)
     fixedMeshPoints, fixedMeshPointNormals = extract_normal_from_tuple(fixedMesh_vtk)
 
-    print("movingMeshPoints.shape ", movingMeshPoints.shape)
-    print("movingMeshPointNormals.shape ", movingMeshPointNormals.shape)
-    print("fixedMeshPoints.shape ", fixedMeshPoints.shape)
-    print("fixedMeshPointNormals.shape ", fixedMeshPointNormals.shape)
+    #print("movingMeshPoints.shape ", movingMeshPoints.shape)
+    #print("movingMeshPointNormals.shape ", movingMeshPointNormals.shape)
+    #print("fixedMeshPoints.shape ", fixedMeshPoints.shape)
+    #print("fixedMeshPointNormals.shape ", fixedMeshPointNormals.shape)
     
     # New FPFH Code
     pcS = np.expand_dims(fixedMeshPoints, -1)
@@ -935,7 +951,7 @@ def process(
     fixedMeshPoints = fixedMeshPoints.T
     movingMeshPoints = movingMeshPoints.T
 
-    fixed_corr = fixedMeshPoints[:, corrs_A]  # np array of size 3 by num_corrs
+    fixed_corr = fixedMeshPoints[:, corrs_A]    # np array of size 3 by num_corrs
     moving_corr = movingMeshPoints[:, corrs_B]  # np array of size 3 by num_corrs
 
     num_corrs = fixed_corr.shape[1]
@@ -948,6 +964,9 @@ def process(
     write_vtk(numpy_to_vtk_polydata(movingMeshPoints.T), WRITE_PATH + casename + "_movingMeshPointsBefore.vtk")
     write_vtk(numpy_to_vtk_polydata(fixedMeshPoints.T), WRITE_PATH + casename + "_fixedMeshPoints.vtk")
 
+    import time
+    bransac = time.time()
+    print('Before RANSAC ', bransac)
     # Perform Initial alignment using Ransac parallel iterations
     transform_matrix, _, value = ransac_using_package(
         movingMeshPoints=movingMeshPoints.T,
@@ -958,7 +977,10 @@ def process(
         number_of_ransac_points=number_of_ransac_points,
         inlier_value=inlier_value,
     )
-
+    aransac = time.time()
+    print('After RANSAC ', aransac)
+    print('Total Duraction ', aransac - bransac)
+    
     transform_matrix = itk.transform_from_dict(transform_matrix)
     
     transform_points_in_vtk(movingMesh, transform_matrix)
@@ -973,26 +995,25 @@ def process(
     landmark_points = transform_numpy_points(landmark_points, transform_matrix)
     movingMeshPoints = transform_numpy_points(movingMeshPoints, transform_matrix)
 
+    print('-----------------------------------------------------------')
     print("Starting Rigid Refinement")
     print("Before Distance ", get_euclidean_distance(fixedMeshPoints, movingMeshPoints))
-
-    print("Shapes are  ", movingMeshPoints.shape, fixedMeshPoints.shape)
-
     transform_type = 0
     final_mesh_points, second_transform = final_iteration(
         fixedMeshPoints, movingMeshPoints, transform_type
     )
-    
+    print("After Distance ", get_euclidean_distance(fixedMeshPoints, final_mesh_points))
+
     write_vtk(numpy_to_vtk_polydata(movingMeshPoints), WRITE_PATH + casename + "_movingMeshPoints.vtk")
     write_vtk(numpy_to_vtk_polydata(final_mesh_points), WRITE_PATH + casename + "_final_mesh_points.vtk")
-
-    print("After Distance ", get_euclidean_distance(fixedMeshPoints, final_mesh_points))
 
     landmark_points = transform_numpy_points(landmark_points, second_transform)
     transform_points_in_vtk(movingMesh, second_transform)
     write_vtk(movingMesh, WRITE_PATH + casename + "_movingMeshRigidRegistered.vtk")
     
     print("Completed Rigid Refinement")
+    print('-----------------------------------------------------------')
+
     print('cpd_flag is ', cpd_flag)
     if int(cpd_flag) == 1:
         combined_points = np.concatenate([landmark_points, final_mesh_points], axis=0)
@@ -1146,7 +1167,6 @@ def process(
         iteration_command = itk.PyCommand.New()
         iteration_command.SetCommandCallable(iteration_update)
         optimizer.AddObserver(itk.IterationEvent(), iteration_command)
-
         optimizer.StartOptimization()
 
         # Transform the point set using the final transform
