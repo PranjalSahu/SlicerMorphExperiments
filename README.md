@@ -17,6 +17,7 @@ The overall goal is to ultimately help with:
 export WHEELS_PATH=/data/SlicerMorph/AllPythonWheels/
 export PREFIX_PATH=/data/SlicerMorph/ITKALPACA-python-dependencies
 ~/Slicer-5.0.3-linux-amd64/bin/PythonSlicer -m pip install --prefix=$PREFIX_PATH --no-index --find-links=$WHEELS_PATH --no-deps --force-reinstall --no-cache-dir -r requirements.txt
+pip install --prefix=$PREFIX_PATH cpdalp
 ```
 
 ### Command to run the extension with Slicer
