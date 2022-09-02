@@ -5,6 +5,7 @@ import glob
 data_path = '/data/Apedata/CorrectData/data/'
 animal_type = 'Gorilla'
 write_path = "/data/Apedata/Slicer-cli-outputs/"
+script_path = "/data/SlicerMorph/slicermorphextension/ITKALPACA/ITKALPACA/ITKALPACA.py"
 
 # Gorilla cases
 allnames_gorilla = [
@@ -74,12 +75,12 @@ if animal_type == 'Gorilla':
     template_landmark = data_path + "Gorilla/landmarks/USNM176211_LM1.fcsv"
     allnames = allnames_gorilla
 elif animal_type == "Pan":
-    template_mesh = "/data/Apedata/CorrectData/data/Pan/meshes/USNM220063-Cranium_merged_1.ply"
-    template_landmark = "/data/Apedata/CorrectData/data/Pan/landmarks/USNM220063_LM1.fcsv"
+    template_mesh = data_path + "Pan/meshes/USNM220063-Cranium_merged_1.ply"
+    template_landmark = data_path + "Pan/landmarks/USNM220063_LM1.fcsv"
     allnames = allnames_pan
 elif animal_type == "Pongo":
-    template_mesh = "/data/Apedata/CorrectData/data/Pongo/meshes/USNM588109-Cranium.ply"
-    template_landmark = "/data/Apedata/CorrectData/data/Pongo/landmarks/USNM588109_LM1.fcsv"
+    template_mesh = data_path + "Pongo/meshes/USNM588109-Cranium.ply"
+    template_landmark = data_path + "Pongo/landmarks/USNM588109_LM1.fcsv"
     allnames = allnames_pongo
 else:
     Raise("Animal Type not present")
@@ -88,11 +89,11 @@ for name in allnames:
     print("====================================================")
     print("Registering ", name)
     meshfile = glob.glob(
-        "/data/Apedata/CorrectData/data/" + animal_type + "/meshes/" + name + "*.ply"
+        data_path + animal_type + "/meshes/" + name + "*.ply"
     )[0]
 
     landmarkfile = glob.glob(
-        "/data/Apedata/CorrectData/data/"
+        data_path
         + animal_type
         + "/landmarks/"
         + name
@@ -100,7 +101,7 @@ for name in allnames:
     )[0]
 
     os.system(
-        "python /data/SlicerMorph/slicermorphextension/ITKALPACA/ITKALPACA/ITKALPACA.py "
+        "python " + script_path + " "
         + meshfile
         + " "
         + template_mesh
