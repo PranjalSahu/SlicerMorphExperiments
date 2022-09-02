@@ -460,7 +460,7 @@ def ransac_using_package(
     ransacEstimator.SetData(data)
     ransacEstimator.SetAgreeData(agreeData)
     ransacEstimator.SetMaxIteration(number_of_iterations)
-    ransacEstimator.SetNumberOfThreads(4)
+    ransacEstimator.SetNumberOfThreads(16)
     ransacEstimator.SetParametersEstimator(registrationEstimator)
     
     for i in range(1):    
