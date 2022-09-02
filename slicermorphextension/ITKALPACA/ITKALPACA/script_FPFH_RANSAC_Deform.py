@@ -7,7 +7,7 @@
 
 from re import A
 import sys
-import slicer
+
 
 sys.path.insert(
     0, "/data/SlicerMorph/ITKALPACA-python-dependencies/lib/python3.9/site-packages/"
@@ -369,20 +369,21 @@ def final_iteration(fixedPoints, movingPoints, transform_type):
     metric.SetMovingTransform(transform)
     metric.Initialize()
 
-    number_of_epochs = 500
+    number_of_epochs = 1000
     optimizer = itk.GradientDescentOptimizerv4Template[itk.D].New()
     optimizer.SetNumberOfIterations(number_of_epochs)
-    optimizer.SetLearningRate(0.0001)
+    optimizer.SetLearningRate(0.00001)
     optimizer.SetMinimumConvergenceValue(0.0)
     optimizer.SetConvergenceWindowSize(number_of_epochs)
     optimizer.SetMetric(metric)
 
     def print_iteration():
-        print(
-            f"It: {optimizer.GetCurrentIteration()}"
-            f" metric value: {optimizer.GetCurrentMetricValue():.6f} "
-        )
-    #optimizer.AddObserver(itk.IterationEvent(), print_iteration)
+        if optimizer.GetCurrentIteration()%100 == 0:
+            print(
+                f"It: {optimizer.GetCurrentIteration()}"
+                f" metric value: {optimizer.GetCurrentMetricValue():.6f} "
+            )
+    optimizer.AddObserver(itk.IterationEvent(), print_iteration)
     optimizer.StartOptimization()
 
     # Get the correct transform and perform the final alignment
@@ -854,6 +855,13 @@ def process(
         filter1.Update()
         vtk_mesh_out_clean = filter1.GetOutput()
 
+        triangle_filter = vtk.vtkTriangleFilter()
+        triangle_filter.SetInputData(vtk_mesh_out_clean)
+        triangle_filter.SetPassLines(False)
+        triangle_filter.SetPassVerts(False)
+        triangle_filter.Update()
+        vtk_mesh_out_clean = triangle_filter.GetOutput()
+
         vtk_meshes.append(vtk_mesh_out_clean)
 
     # Scale the mesh and the landmark points
@@ -897,18 +905,20 @@ def process(
     # Write back out to a filetype supported by ITK
     vtk_paths = [path.strip(filetype) + ".vtk" for path in paths]
     casenames = []
-    for idx, mesh in enumerate(vtk_meshes):
+    for idx, _ in enumerate(vtk_meshes):
         casename = vtk_paths[idx].split("/")[-1].split(".")[0].split("_")[0]
         casenames.append(casename)
+    
+    for idx, mesh in enumerate(vtk_meshes):
         if idx == 1:
-            write_path = WRITE_PATH + casename + "_movingMesh.vtk"
+            write_path = WRITE_PATH + casenames[0] + "_movingMesh.vtk"
         else:
-            write_path = WRITE_PATH + casename + "_fixedMesh.vtk"
+            write_path = WRITE_PATH + casenames[0] + "_fixedMesh.vtk"
         print("Writing mesh ", write_path)
         write_vtk(mesh, write_path)
 
     # Write the cleaned Initialized meshes
-    movingMeshPath = WRITE_PATH + casenames[1] + "_movingMesh.vtk"
+    movingMeshPath = WRITE_PATH + casenames[0] + "_movingMesh.vtk"
     fixedMeshPath = WRITE_PATH + casenames[0] + "_fixedMesh.vtk"
 
     # For performing RANSAC in parallel
@@ -919,21 +929,38 @@ def process(
     fixedFullMesh_vtk = getnormals(fixedMesh_vtk)
 
     # Sub-Sample the points for rigid refinement and deformable registration
-    movingMesh_vtk = subsample_points_poisson_polydata(
-        movingFullMesh_vtk, radius=subsample_radius
-    )
-    fixedMesh_vtk = subsample_points_poisson_polydata(
-        fixedFullMesh_vtk, radius=subsample_radius
-    )
+    subsample_radius_moving = subsample_radius
+    subsample_radius_fixed = subsample_radius
+    while (True):
+        print('Resampling moving with radius = ', subsample_radius_moving)
+        movingMesh_vtk = subsample_points_poisson_polydata(
+            movingFullMesh_vtk, radius=subsample_radius_moving
+        )
+        if movingMesh_vtk.GetNumberOfPoints() < 5000:
+            break
+        else:
+            subsample_radius_moving = subsample_radius_moving + 0.25
+    
+    while (True):
+        print('Resampling fixed with radius = ', subsample_radius_fixed)
+        fixedMesh_vtk = subsample_points_poisson_polydata(
+            fixedFullMesh_vtk, radius=subsample_radius_fixed
+        )
+        if fixedMesh_vtk.GetNumberOfPoints() < 5000:
+            break
+        else:
+            subsample_radius_fixed = subsample_radius_fixed + 0.25
 
     movingMeshPoints, movingMeshPointNormals = extract_normal_from_tuple(movingMesh_vtk)
     fixedMeshPoints, fixedMeshPointNormals = extract_normal_from_tuple(fixedMesh_vtk)
 
-    #print("movingMeshPoints.shape ", movingMeshPoints.shape)
-    #print("movingMeshPointNormals.shape ", movingMeshPointNormals.shape)
-    #print("fixedMeshPoints.shape ", fixedMeshPoints.shape)
-    #print("fixedMeshPointNormals.shape ", fixedMeshPointNormals.shape)
-    
+    print('------------------------------------------------------------')
+    print("movingMeshPoints.shape ", movingMeshPoints.shape)
+    print("movingMeshPointNormals.shape ", movingMeshPointNormals.shape)
+    print("fixedMeshPoints.shape ", fixedMeshPoints.shape)
+    print("fixedMeshPointNormals.shape ", fixedMeshPointNormals.shape)
+    print('------------------------------------------------------------')
+
     # New FPFH Code
     pcS = np.expand_dims(fixedMeshPoints, -1)
     normal_np_pcl = fixedMeshPointNormals
@@ -959,10 +986,10 @@ def process(
 
     print(fixed_corr.shape, moving_corr.shape)
     
-    write_vtk(numpy_to_vtk_polydata(moving_corr.T), WRITE_PATH + casename + "_moving_corr.vtk")
-    write_vtk(numpy_to_vtk_polydata(fixed_corr.T), WRITE_PATH + casename + "_fixed_corr.vtk")
-    write_vtk(numpy_to_vtk_polydata(movingMeshPoints.T), WRITE_PATH + casename + "_movingMeshPointsBefore.vtk")
-    write_vtk(numpy_to_vtk_polydata(fixedMeshPoints.T), WRITE_PATH + casename + "_fixedMeshPoints.vtk")
+    write_vtk(numpy_to_vtk_polydata(moving_corr.T), WRITE_PATH + casenames[0] + "_moving_corr.vtk")
+    write_vtk(numpy_to_vtk_polydata(fixed_corr.T), WRITE_PATH + casenames[0] + "_fixed_corr.vtk")
+    write_vtk(numpy_to_vtk_polydata(movingMeshPoints.T), WRITE_PATH + casenames[0] + "_movingMeshPointsBefore.vtk")
+    write_vtk(numpy_to_vtk_polydata(fixedMeshPoints.T), WRITE_PATH + casenames[0] + "_fixedMeshPoints.vtk")
 
     import time
     bransac = time.time()
@@ -984,7 +1011,7 @@ def process(
     transform_matrix = itk.transform_from_dict(transform_matrix)
     
     transform_points_in_vtk(movingMesh, transform_matrix)
-    write_vtk(movingMesh, WRITE_PATH + casename + "_movingMeshRANSAC.vtk")
+    write_vtk(movingMesh, WRITE_PATH + casenames[0] + "_movingMeshRANSAC.vtk")
 
     movingMeshPoints = movingMeshPoints.T
     fixedMeshPoints = fixedMeshPoints.T
@@ -1004,12 +1031,12 @@ def process(
     )
     print("After Distance ", get_euclidean_distance(fixedMeshPoints, final_mesh_points))
 
-    write_vtk(numpy_to_vtk_polydata(movingMeshPoints), WRITE_PATH + casename + "_movingMeshPoints.vtk")
-    write_vtk(numpy_to_vtk_polydata(final_mesh_points), WRITE_PATH + casename + "_final_mesh_points.vtk")
+    write_vtk(numpy_to_vtk_polydata(movingMeshPoints), WRITE_PATH + casenames[0] + "_movingMeshPoints.vtk")
+    write_vtk(numpy_to_vtk_polydata(final_mesh_points), WRITE_PATH + casenames[0] + "_final_mesh_points.vtk")
 
     landmark_points = transform_numpy_points(landmark_points, second_transform)
     transform_points_in_vtk(movingMesh, second_transform)
-    write_vtk(movingMesh, WRITE_PATH + casename + "_movingMeshRigidRegistered.vtk")
+    write_vtk(movingMesh, WRITE_PATH + casenames[0] + "_movingMeshRigidRegistered.vtk")
     
     print("Completed Rigid Refinement")
     print('-----------------------------------------------------------')
@@ -1028,15 +1055,15 @@ def process(
             beta_parameter)
         print('CPD Result ', outputArray.shape)
 
-        np.save(WRITE_PATH + casename + "_cpdResultLandmarks.npy", outputArray[:landmark_points.shape[0], :])
-        np.save(WRITE_PATH + casename + "_cpdResult.npy", outputArray[landmark_points.shape[0]:, :])
+        np.save(WRITE_PATH + casenames[0] + "_cpdResultLandmarks.npy", outputArray[:landmark_points.shape[0], :])
+        np.save(WRITE_PATH + casenames[0] + "_cpdResult.npy", outputArray[landmark_points.shape[0]:, :])
 
         outputPoints_vtk = getFiducialPoints(outputArray[:landmark_points.shape[0], :])
         inputPoints_vtk = getFiducialPoints(landmark_points)
 
         nodeName = 'TPS Warped Model'
         warpedModel = applyTPSTransform(inputPoints_vtk, outputPoints_vtk, movingMesh, nodeName)
-        write_vtk(warpedModel, WRITE_PATH + casename + "_movingMeshFinalRegistered_CPD.vtk")
+        write_vtk(warpedModel, WRITE_PATH + casenames[0] + "_movingMeshFinalRegistered_CPD.vtk")
 
         maxProjectionFactor = 1/100.0
         maxProjection = (fixedFullMesh_vtk.GetLength()) * maxProjectionFactor
@@ -1047,7 +1074,7 @@ def process(
         print('projectedPoints shape is ', projectedPoints.shape)
         #projectedPoints = getFiducialPoints(projectedPoints)
         #write_vtk(projectedPoints, WRITE_PATH + casename + "_cpdResultLandmarksProjected.vtk")
-        np.save(WRITE_PATH + casename + "_cpdResultLandmarksProjected.npy", projectedPoints)
+        np.save(WRITE_PATH + casenames[0] + "_cpdResultLandmarksProjected.npy", projectedPoints)
         return
     else:
         # [STAR] Expectation Based PointSetToPointSetMetricv4 Registration
@@ -1201,9 +1228,9 @@ def process(
             np.save(WRITE_PATH + "displacement_field.npy", field)
 
         # Write the final registered mesh
-        movingMeshPath = WRITE_PATH + casename + "_movingMeshRigidRegistered.vtk"
+        movingMeshPath = WRITE_PATH + casenames[0] + "_movingMeshRigidRegistered.vtk"
         print('movingMeshPath is ', movingMeshPath)
-        movingMesh = read_vtk(movingMeshPath)
+        movingMesh = readvtk(movingMeshPath)
         
         landmark_points_transformed = []
         for i in range(len(landmark_points)):
@@ -1215,7 +1242,7 @@ def process(
 
         nodeName = 'TPS Warped Model'
         warpedModel = applyTPSTransform(inputPoints_vtk, outputPoints_vtk, movingMesh, nodeName)
-        write_vtk(warpedModel, WRITE_PATH + casename + "_movingMeshFinalRegisteredITK_TPS.vtk")
+        write_vtk(warpedModel, WRITE_PATH + casenames[0] + "_movingMeshFinalRegisteredITK_TPS.vtk")
         return
 
 

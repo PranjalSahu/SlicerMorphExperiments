@@ -2,8 +2,6 @@
 
 import sys
 import script_FPFH_RANSAC_Deform as alpaca
-import slicer
-from slicer import util
 
 def main(
     target,
@@ -66,10 +64,6 @@ if __name__ == "__main__":
     print("beta_parameter : ", float(sys.argv[14]))
     print("landmark_file : ", sys.argv[15])
     print("cpd_flag : ", int(sys.argv[16]))
-
-    slicer.util.pip_install(f'cpdalp')
-    import cpdalp
-    print('Importing of cpdalp done')
 
     main(
         target=sys.argv[1],
