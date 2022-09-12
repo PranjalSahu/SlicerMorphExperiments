@@ -3,7 +3,7 @@ import os
 import glob
 
 data_path = '/data/Apedata/CorrectData/data/'
-animal_type = 'Gorilla'
+animal_type = 'Mus'
 write_path = "/data/Apedata/Slicer-cli-outputs/"
 script_path = "/data/SlicerMorph/slicermorphextension/ITKALPACA/ITKALPACA/ITKALPACA.py"
 
@@ -67,6 +67,61 @@ allnames_pongo = [
     "USNM145300",
     "USNM153806",
 ]
+
+# Mus cases
+allnames_mus = [
+    "C57BL6_J_",
+    "C57BL_10J_",
+    "C57BLKS.J_",
+    "C57BL_6NJ_",
+    "AKR_J_",
+    "DBA_1J_",
+    "CAST_EIJ_",
+    "BALB_CJ_",
+    "NOR.LtJ_",
+    "A_J_",
+    "NZB.BINJ_",
+    "B6D2F1_J_",
+    "PL.J_",
+    "DBA_2J_",
+    "B6CBAF1.J_",
+    "SF.CamEiJ_",
+    "MOLG.DnJ_",
+    "LP.J_",
+    "129S1_SVIMJ_",
+    "PWK.PhJ_",
+    "KK.HlJ_",
+    "SWR.J_",
+    "B6129PF1.J_",
+    "SPRET.EiJ_",
+    "C3H_HEJ_",
+    "C57L_J_",
+    "B6C3F1.J_",
+    "129X1_SVJ_",
+    "SJL_J_",
+    "B6AF1_J_",
+    "B6129SF1.J_",
+    "NOD_SHILTJ_",
+    "B6SJLF1.J_",
+    "C3H_HEOUJ_",
+    "NZW_LACJ_",
+    "NZBWF1_J_",
+    "X129P3.J_",
+    "CBA_CAJ_",
+    "TALLYHO_JNGJ_",
+    "BTBR_T_Itpr3tf_j_",
+    "CBA_J_",
+    "CB6F1_J_",
+    "LG.J_",
+    "BALB_CBYJ_",
+    "C3HeB.FeJ_",
+    "PERC.EiJ_",
+    "FVB_NJ_",
+    "MRL_MPJ_",
+    "CAF1_J_",
+    "NU_J_",
+    "NZO.HlLtJ_"
+]
 # MOVING FILE i.e. TEMPLATE FILE IS CONSTANT
 
 
@@ -82,6 +137,10 @@ elif animal_type == "Pongo":
     template_mesh = data_path + "Pongo/meshes/USNM588109-Cranium.ply"
     template_landmark = data_path + "Pongo/landmarks/USNM588109_LM1.fcsv"
     allnames = allnames_pongo
+elif animal_type == 'Mus':
+    template_mesh = data_path + "Mus/template/template.ply"
+    template_landmark = data_path + "Mus/template/template.fcsv"
+    allnames = allnames_mus
 else:
     Raise("Animal Type not present")
 
@@ -105,7 +164,7 @@ for name in allnames:
         + meshfile
         + " "
         + template_mesh
-        + " 4 100 3 25 100 2 10 5 100 2000 2 2 "
+        + " 0.4 100 0.3 2 100 2 10 5 100 2000 2 2 "
         + template_landmark
         + " 1"
     )

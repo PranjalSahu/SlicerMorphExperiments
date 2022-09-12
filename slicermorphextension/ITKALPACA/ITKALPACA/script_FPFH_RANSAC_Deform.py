@@ -931,25 +931,26 @@ def process(
     # Sub-Sample the points for rigid refinement and deformable registration
     subsample_radius_moving = subsample_radius
     subsample_radius_fixed = subsample_radius
+    increment_radius = subsample_radius/16
     while (True):
-        print('Resampling moving with radius = ', subsample_radius_moving)
         movingMesh_vtk = subsample_points_poisson_polydata(
             movingFullMesh_vtk, radius=subsample_radius_moving
         )
+        print('Resampling moving with radius = ', subsample_radius_moving, movingMesh_vtk.GetNumberOfPoints())
         if movingMesh_vtk.GetNumberOfPoints() < 5000:
             break
         else:
-            subsample_radius_moving = subsample_radius_moving + 0.25
+            subsample_radius_moving = subsample_radius_moving + increment_radius
     
     while (True):
-        print('Resampling fixed with radius = ', subsample_radius_fixed)
         fixedMesh_vtk = subsample_points_poisson_polydata(
             fixedFullMesh_vtk, radius=subsample_radius_fixed
         )
+        print('Resampling fixed with radius = ', subsample_radius_fixed, fixedMesh_vtk.GetNumberOfPoints())
         if fixedMesh_vtk.GetNumberOfPoints() < 5000:
             break
         else:
-            subsample_radius_fixed = subsample_radius_fixed + 0.25
+            subsample_radius_fixed = subsample_radius_fixed + increment_radius
 
     movingMeshPoints, movingMeshPointNormals = extract_normal_from_tuple(movingMesh_vtk)
     fixedMeshPoints, fixedMeshPointNormals = extract_normal_from_tuple(fixedMesh_vtk)
