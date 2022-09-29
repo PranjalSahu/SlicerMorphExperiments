@@ -3,19 +3,19 @@
   <category>Examples</category>
   <index>0</index>
   <title>ITKALPACA</title>
-  <description><![CDATA[Apply a Gaussian blur to an image]]></description>
+  <description><![CDATA[Module for registering point clouds]]></description>
   <version>0.1.0.</version>
-  <documentation-url>https://github.com/username/project</documentation-url>
+  <documentation-url>https://github.com/PranjalSahu/SlicerMorph/tree/slicer-cli</documentation-url>
   <license/>
   <contributor>Andras Lasso (PerkLab)</contributor>
   <acknowledgements><![CDATA[This work is part of the National Alliance for Medical Image Computing (NAMIC), funded by the National Institutes of Health through the NIH Roadmap for Medical Research, Grant U54 EB005149.]]></acknowledgements>
   <parameters>
     <double>
-      <name>subsample_radius</name>
-      <label>PointSet Subsample Radius</label>
+      <name>point_density</name>
+      <label>Point Density</label>
       <index>3</index>
-      <description><![CDATA[Radius used to sub-sample points from full resolution pointset]]></description>
-      <default>4.5</default>
+      <description><![CDATA[Point Density for subsampling]]></description>
+      <default>1</default>
     </double>
     <integer>
       <name>number_of_ransac_points</name>
