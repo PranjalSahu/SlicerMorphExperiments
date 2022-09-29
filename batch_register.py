@@ -3,7 +3,7 @@ import os
 import glob
 
 data_path = '/data/Apedata/CorrectData/data/'
-animal_type = 'Mus'
+animal_type = 'Pan'
 write_path = "/data/Apedata/Slicer-cli-outputs/"
 script_path = "/data/SlicerMorph/slicermorphextension/ITKALPACA/ITKALPACA/ITKALPACA.py"
 
@@ -122,6 +122,11 @@ allnames_mus = [
     "NU_J_",
     "NZO.HlLtJ_"
 ]
+
+# Zygote cases
+allnames_zygote = [
+    "15_3621"
+]
 # MOVING FILE i.e. TEMPLATE FILE IS CONSTANT
 
 
@@ -141,6 +146,10 @@ elif animal_type == 'Mus':
     template_mesh = data_path + "Mus/template/template.ply"
     template_landmark = data_path + "Mus/template/template.fcsv"
     allnames = allnames_mus
+elif animal_type == "Zygote":
+    template_mesh = data_path + "Zygote/meshes/15_7846.ply"
+    template_landmark = data_path + "Zygote/landmarks/15_7846.fcsv"
+    allnames = allnames_zygote
 else:
     Raise("Animal Type not present")
 
@@ -164,7 +173,7 @@ for name in allnames:
         + meshfile
         + " "
         + template_mesh
-        + " 0.4 100 0.3 2 100 2 10 5 100 2000 2 2 "
+        + " 1.5 250 3 25 100 2 10 5 100 1000 2 2 "
         + template_landmark
         + " 1"
     )

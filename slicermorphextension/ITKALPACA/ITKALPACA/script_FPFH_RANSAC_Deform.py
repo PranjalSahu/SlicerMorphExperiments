@@ -808,7 +808,7 @@ def add_offset_to_vtk_mesh(input_vtk_mesh, offset):
 def process(
     target,
     source,
-    subsample_radius,
+    point_density,
     number_of_ransac_points,
     inlier_value,
     fpfh_radius,
@@ -868,10 +868,16 @@ def process(
     box_filter = vtk.vtkBoundingBox()
     box_filter.SetBounds(vtk_meshes[0].GetBounds())
     fixedlength = box_filter.GetDiagonalLength()
+    fixedLengths = [0.0, 0.0, 0.0]
+    box_filter.GetLengths(fixedLengths)
+    fixedVolume = np.prod(fixedLengths)
 
     box_filter = vtk.vtkBoundingBox()
     box_filter.SetBounds(vtk_meshes[1].GetBounds())
     movinglength = box_filter.GetDiagonalLength()
+    movingLengths = [0.0, 0.0, 0.0]
+    box_filter.GetLengths(movingLengths)
+    movingVolume = np.prod(movingLengths)
 
     print("Scale length are  ", fixedlength, movinglength)
     scale_factor = fixedlength / movinglength
@@ -928,29 +934,48 @@ def process(
     movingFullMesh_vtk = getnormals(movingMesh_vtk)
     fixedFullMesh_vtk = getnormals(fixedMesh_vtk)
 
+    print('movingMesh_vtk.GetNumberOfPoints() ', movingMesh_vtk.GetNumberOfPoints())
+    print('fixedMesh_vtk.GetNumberOfPoints() ', fixedMesh_vtk.GetNumberOfPoints())
+    
     # Sub-Sample the points for rigid refinement and deformable registration
-    subsample_radius_moving = subsample_radius
-    subsample_radius_fixed = subsample_radius
-    increment_radius = subsample_radius/16
+    #subsample_radius_moving = movingMesh_vtk.GetNumberOfPoints()/ (5000 * 1000)
+    subsample_radius_moving = 0.25*((movingVolume/(4.19*5000)) ** (1./3.))
+
+    print('Initial estimate of subsample_radius_moving is ', subsample_radius_moving
+    )
+    increment_radius = 0.25*subsample_radius_moving
     while (True):
         movingMesh_vtk = subsample_points_poisson_polydata(
             movingFullMesh_vtk, radius=subsample_radius_moving
         )
         print('Resampling moving with radius = ', subsample_radius_moving, movingMesh_vtk.GetNumberOfPoints())
-        if movingMesh_vtk.GetNumberOfPoints() < 5000:
+        if movingMesh_vtk.GetNumberOfPoints() < 5500:
             break
         else:
             subsample_radius_moving = subsample_radius_moving + increment_radius
-    
+    if point_density != 1:
+        print('point density is not 1 ', point_density)
+        subsample_radius_moving = subsample_radius_moving - (point_density-1)*increment_radius
+        movingMesh_vtk = subsample_points_poisson_polydata(movingFullMesh_vtk, radius=subsample_radius_moving)
+
+    #subsample_radius_fixed = fixedMesh_vtk.GetNumberOfPoints()/ (5000 * 1000)
+    subsample_radius_fixed = 0.25*((fixedVolume/(4.19*5000)) ** (1./3.))
+    print('Initial estimate of subsample_radius_fixed is ', subsample_radius_fixed
+    )
+    increment_radius = 0.25*subsample_radius_fixed
     while (True):
         fixedMesh_vtk = subsample_points_poisson_polydata(
             fixedFullMesh_vtk, radius=subsample_radius_fixed
         )
         print('Resampling fixed with radius = ', subsample_radius_fixed, fixedMesh_vtk.GetNumberOfPoints())
-        if fixedMesh_vtk.GetNumberOfPoints() < 5000:
+        if fixedMesh_vtk.GetNumberOfPoints() < 5500:
             break
         else:
             subsample_radius_fixed = subsample_radius_fixed + increment_radius
+    if point_density != 1:
+        print('point density is not 1 ', point_density)
+        subsample_radius_fixed = subsample_radius_fixed - (point_density-1)*increment_radius
+        fixedMesh_vtk = subsample_points_poisson_polydata(fixedFullMesh_vtk, radius=subsample_radius_fixed)
 
     movingMeshPoints, movingMeshPointNormals = extract_normal_from_tuple(movingMesh_vtk)
     fixedMeshPoints, fixedMeshPointNormals = extract_normal_from_tuple(fixedMesh_vtk)
